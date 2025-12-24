@@ -1,0 +1,66 @@
+[
+  {
+    "set": "TLA",
+    "face-set": "JTLA",
+    "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/TLA/WM.svg",
+    "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/TLA/C.svg",
+    "txt-location": "library/Avatar/",
+    "intermediate-json": "avatar-output.json"
+  },
+  {
+    "set": "DMU",
+    "face-set": "FDMU",
+    "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/DMU/WM.svg",
+    "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/DMU/C.svg",
+    "txt-location": "library/Dominaria United Jumpstart/",
+    "intermediate-json": "dominaria-united-jumpstart-output.json"
+  },
+  {
+    "set": "J25",
+    "face-set": "FJ25",
+    "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/J25/WM.svg",
+    "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/J25/C.svg",
+    "txt-location": "library/Foundations/",
+    "intermediate-json": "foundations-output.json"
+  },
+  {
+    "set": "J22",
+    "face-set": "FJ22",
+    "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/J22/WM.svg",
+    "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/J22/C.svg",
+    "txt-location": "library/Jumpstart 2022/",
+    "intermediate-json": "jumpstart-2022-output.json"
+  },
+  {
+    "set": "LTR",
+    "face-set": "FLTR",
+    "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/LTR/WM.svg",
+    "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/LTR/C.svg",
+    "txt-location": "library/Lord of the Rings: Tales of Middle-Earth Jumpstart/",
+    "intermediate-json": "lord-of-the-rings-tales-of-middle-earth-jumpstart-output.json"
+  },
+  {
+    "set": "MOM",
+    "face-set": "FMOM",
+    "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/MOM/WM.svg",
+    "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/MOM/C.svg",
+    "txt-location": "library/March of the Machine Jumpstart/",
+    "intermediate-json": "march-of-the-machine-jumpstart-output.json"
+  },
+  {
+    "set": "ONE",
+    "face-set": "FONE",
+    "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/ONE/WM.svg",
+    "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/ONE/C.svg",
+    "txt-location": "library/Phyrexia: All Will Be One Jumpstart/",
+    "intermediate-json": "phyrexia-all-will-be-one-jumpstart-output.json"
+  },
+  {
+    "set": "BRO",
+    "face-set": "FBRO",
+    "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/BRO/WM.svg",
+    "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/BRO/C.svg",
+    "txt-location": "library/The Brothers' War Jumpstart/",
+    "intermediate-json": "the-brothers'-war-jumpstart-output.json"
+  }
+]

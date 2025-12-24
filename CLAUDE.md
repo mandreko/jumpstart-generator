@@ -1,0 +1,183 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+This is an MTG Jumpstart Card Generator that converts WOTC text file deck lists into printable cards through a two-phase pipeline:
+1. Parse WOTC text files into intermediate JSON format
+2. Query Scryfall API, process images, and generate Card Conjurer JSON files
+
+The end result: ready-to-print custom Jumpstart packs for makeplayingcards.com (MPC).
+
+## Common Commands
+
+### Build Pipeline
+```bash
+npm run rebuild    # Full rebuild: clean + convert + generate (takes 5-10 min)
+npm run build      # Convert + generate (skips clean)
+npm run convert    # Phase 1: Parse WOTC text files to JSON
+npm run generate   # Phase 2: Generate Card Conjurer files + process images
+npm run clean      # Delete all generated output files
+```
+
+### Single Set Processing
+```bash
+# Convert specific set's text files
+node convert-wotc-txt-to-json.js "Avatar"
+
+# Generate Card Conjurer files for specific set
+node generate-card-conjurer-json.js TLA
+
+# Available set codes: TLA, DMU, J25, J22, LTR, MOM, ONE, BRO
+```
+
+## Architecture & Data Flow
+
+```
+INPUT: txt-from-wotc/{set-name}/*.txt
+  ↓
+convert-wotc-txt-to-json.js
+  ├─ Regex parsing: ^(\d+)\s+(.+)$
+  ├─ Groups cards by pack (filename)
+  └─ Deduplicates and sums quantities
+  ↓
+OUTPUT: output/json-decklists/{set-name}-output.json
+  ↓
+generate-card-conjurer-json.js
+  ├─ Queries Scryfall API (rate-limited 100ms)
+  ├─ Downloads card images (672×936px)
+  ├─ Processes with ImageMagick:
+  │   • Overlays 28px black on borders
+  │   • Adds 33px bleed border (final: 738×1002px)
+  ├─ Generates Card Conjurer JSON from template
+  └─ Calculates watermark positioning
+  ↓
+OUTPUT (3 types):
+  ├─ output/cardconjurer-json-files/*.json (individual cards)
+  ├─ output/cardconjurer-import-files/*.cardconjurer (bulk import)
+  └─ output/front-images/*.jpg (processed images, ~125MB total)
+```
+
+## Key Configuration: sets.json
+
+Master configuration for all 8 supported sets. Each entry contains:
+- `background-watermark`: SVG URL from github.com/pappnu/mtg-vectors
+- `lower-watermark`: Set symbol SVG URL
+- `intermediate-json`: Output filename for Phase 1
+
+Set codes: TLA, DMU, J25, J22, LTR, MOM, ONE, BRO
+
+## Core Processing (generate-card-conjurer-json.js)
+
+This 1,044-line file is the processing engine. Key components:
+
+### Caching System
+- **ScryfallCache**: Two maps prevent redundant API calls
+  - `cardDataCache`: card name → {name, mana_cost, type_line}
+  - `packCardCache`: "{set}:{packName}" → {themeColor, collectorNumber, imageUri}
+
+### Rate Limiting
+- **RateLimiter class**: Enforces 100ms delay between Scryfall requests
+- Required by Scryfall API terms
+
+### Image Processing Pipeline
+1. Download from Scryfall (672×936px)
+2. `overlayBlackOnOriginalBorder()`: 28px black on edges via ImageMagick
+3. `addBlackBorder()`: Add 33px bleed border (final: 738×1002px)
+
+### Template System
+- **CARD_TEMPLATE**: Embedded Card Conjurer format (lines 34-113)
+- Color frames mapped from COLOR_TO_FRAME_MAP: {W/U/B/R/G/C/multicolor}
+- Deep clone pattern: `JSON.parse(JSON.stringify(template))`
+
+### Key Functions
+| Function | Purpose |
+|----------|---------|
+| `queryCardData()` | Scryfall API query with caching |
+| `queryPackCard()` | Find theme color from pack face card |
+| `calculateWatermarkPosition()` | Fit watermark to bounds with zoom |
+| `generateRulesText()` | Format card list by type (Creature, Instant, etc.) |
+| `generatePackJSON()` | Create final Card Conjurer JSON |
+
+## File Naming Conventions
+
+**Output files follow this pattern:**
+- JSON cards: `{SET_CODE}-{COLLECTOR_NUMBER}-{PACK_NAME}.json`
+- Images: `{SET_CODE}-{COLLECTOR_NUMBER}-{PACK_NAME}.jpg`
+- Import file: `{SET_CODE}-saved-cards.cardconjurer`
+
+**Collector numbers:** `F 0001` format (F = Jumpstart Face card, 4 digits)
+
+## External Dependencies
+
+### Required Tools
+- **Node.js**: v14+ (specified in package.json engines)
+- **ImageMagick**: CLI tool for image processing
+  - Commands used: `magick identify`, `magick ... -fill ... -draw ...`
+
+### APIs
+- **Scryfall API** (api.scryfall.com)
+  - `/cards/named?exact={name}` - Get card data
+  - `/cards/search?q=set:{code} {name}` - Find pack face cards
+  - Rate limit: 100ms between requests (enforced by RateLimiter)
+
+- **GitHub Raw** (raw.githubusercontent.com/pappnu/mtg-vectors)
+  - Fetches SVG watermarks, converted to base64 data URIs
+
+## Error Handling Patterns
+
+The codebase uses these fallback strategies:
+- **Card not found**: Uses card name with "Unknown" type, continues
+- **Image unavailable**: Warns but continues
+- **API errors**: Retries with rate limiting, uses cached data
+- **SVG parsing failures**: Uses default positioning from template
+
+Log levels: `[INFO]`, `[WARN]`, `[ERROR]`, `[FATAL]`
+
+## Important Code Patterns
+
+1. **Promise-based async operations** for I/O, API calls, image processing
+2. **Regex parsing** for card quantities: `^(\d+)\s+(.+)$`
+3. **Deep cloning** of template object for each card
+4. **SVG dimension parsing** from base64-encoded data URIs
+5. **Cross-platform CLI execution** with `execFileSync(..., {stdio: 'inherit'})`
+
+## Output Directory Structure
+
+```
+output/
+├── json-decklists/           # Phase 1 output (~165KB)
+│   └── {set-name}-output.json
+├── cardconjurer-json-files/  # Individual cards (~6.2MB, 368 files)
+│   └── {SET}-{NUM}-{PACK}.json
+├── cardconjurer-import-files/ # Bulk import files (~6.2MB, 7 files)
+│   └── {SET}-saved-cards.cardconjurer
+└── front-images/             # Processed images (~125MB, 368 files)
+    └── {SET}-{NUM}-{PACK}.jpg
+```
+
+## Workflow for End Users
+
+1. `npm install` (one-time setup)
+2. `npm run rebuild` (5-10 minutes total)
+3. Upload `output/cardconjurer-import-files/*.cardconjurer` to CardConjurer.app
+4. Use Greasemonkey script to auto-download rendered cards
+5. Upload `output/front-images/*.jpg` as card fronts to NotMPC
+
+See USAGE.md for detailed step-by-step instructions.
+
+## Development Notes
+
+- All npm scripts are cross-platform compatible (Windows/macOS/Linux)
+- Sequential processing (not parallel) to respect Scryfall rate limits
+- ~40-50 cards per set × 100ms = ~5-6 seconds API time + image downloads
+- Total storage: ~137MB for all generated files
+
+## Project Credits
+
+This project was 100% coded by Claude AI as a vibe-coding test. External resources:
+- Scryfall API for card data
+- github.com/pappnu/mtg-vectors for SVG watermarks
+- CardConjurer.app for rendering engine
+- reddit.com/user/HyperHowie for the original concept
