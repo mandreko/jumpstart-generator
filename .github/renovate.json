@@ -1,31 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
-  ],
-  "schedule": [
-    "before 6am on monday"
-  ],
-  "rangeStrategy": "bump",
-  "semanticCommits": "enabled",
-  "commitMessagePrefix": "chore(deps):",
-  "automerge": false,
-  "vulnerabilityAlerts": {
-    "enabled": true,
-    "labels": ["security"]
-  },
+  "enabledManagers": ["npm"],
+  "dependencyDashboard": true,
   "packageRules": [
     {
-      "matchUpdateTypes": ["minor", "patch"],
-      "matchDepTypes": ["devDependencies"],
-      "automerge": true,
-      "automergeType": "pr"
-    },
-    {
-      "matchUpdateTypes": ["major"],
-      "labels": ["major-update"]
+      "groupName": "npm minor",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"]
     }
-  ],
-  "prConcurrentLimit": 3,
-  "prHourlyLimit": 2
+  ]
 }
