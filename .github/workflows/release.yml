@@ -20,8 +20,39 @@ jobs:
           node-version: '18'
           cache: 'npm'
 
-      - name: Install ImageMagick
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
+      - name: Install ImageMagick 7 from source
+        run: |
+          # Install build dependencies
+          sudo apt-get update
+          sudo apt-get install -y build-essential wget pkg-config \
+            libjpeg-dev libpng-dev libtiff-dev libwebp-dev \
+            libopenjp2-7-dev libfreetype6-dev libfontconfig1-dev
+
+          # Download and extract ImageMagick 7
+          IMAGEMAGICK_VERSION=7.1.2-12
+          wget https://github.com/ImageMagick/ImageMagick/archive/refs/tags/${IMAGEMAGICK_VERSION}.tar.gz
+          tar xzf ${IMAGEMAGICK_VERSION}.tar.gz
+          cd ImageMagick-${IMAGEMAGICK_VERSION}
+
+          # Configure and build
+          ./configure --prefix=/usr/local \
+            --with-modules \
+            --enable-shared \
+            --with-jpeg \
+            --with-png \
+            --with-tiff \
+            --with-webp \
+            --with-openjp2 \
+            --with-freetype \
+            --with-fontconfig
+
+          # Compile and install
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+
+          # Verify installation
+          magick -version
 
       - name: Install dependencies
         run: npm ci
