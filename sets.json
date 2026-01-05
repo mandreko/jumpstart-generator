@@ -36,7 +36,7 @@
     "face-set": "FLTR",
     "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/LTR/WM.svg",
     "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/LTR/C.svg",
-    "txt-location": "library/Lord of the Rings: Tales of Middle-Earth Jumpstart/",
+    "txt-location": "library/Lord of the Rings Tales of Middle-Earth Jumpstart/",
     "intermediate-json": "lord-of-the-rings-tales-of-middle-earth-jumpstart-output.json"
   },
   {
@@ -52,7 +52,7 @@
     "face-set": "FONE",
     "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/ONE/WM.svg",
     "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/ONE/C.svg",
-    "txt-location": "library/Phyrexia: All Will Be One Jumpstart/",
+    "txt-location": "library/Phyrexia All Will Be One Jumpstart/",
     "intermediate-json": "phyrexia-all-will-be-one-jumpstart-output.json"
   },
   {
