@@ -2,6 +2,16 @@
 
 Generates Card Conjurer JSON files for MTG Jumpstart packs by querying Scryfall API for card data. Also downloads and processes face card images with black borders for MPC printing.
 
+## Quick Start - Download Pre-Generated Files
+
+**Don't want to run the code locally?** You can download the latest pre-generated Card Conjurer JSON files and face card images directly from the [GitHub Releases page](https://github.com/mandreko/jumpstart-generator/releases/latest).
+
+Each release includes:
+- **Card Conjurer import files** (`.cardconjurer`) - Ready to import into CardConjurer.app
+- **Face card images** - Pre-processed images with black borders for MPC printing
+
+This is the easiest option if you just want to print cards without setting up the development environment.
+
 ## Prerequisites
 
 ### Required Software
