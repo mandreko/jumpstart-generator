@@ -3,7 +3,7 @@ name: Create Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 jobs:
@@ -17,8 +17,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: "npm"
 
       - name: Install ImageMagick 7 from source
         run: |
@@ -26,7 +26,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential wget pkg-config \
             libjpeg-dev libpng-dev libtiff-dev libwebp-dev \
-            libopenjp2-7-dev libfreetype6-dev libfontconfig1-dev
+            libopenjp2-7-dev libfreetype6-dev libfontconfig1-dev libltdl-dev
 
           # Download and extract ImageMagick 7
           IMAGEMAGICK_VERSION=7.1.2-12
