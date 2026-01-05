@@ -30,6 +30,10 @@ const COLOR_TO_WATERMARK_MAP = {
 
 const SCRYFALL_DELAY_MS = 100;
 
+// Supported languages for internationalization
+const SUPPORTED_LANGUAGES = ['en', 'es', 'fr', 'de', 'it', 'ja'];
+const DEFAULT_LANGUAGE = 'en';
+
 // Card Conjurer template (embedded)
 const CARD_TEMPLATE = {
   "width": 2010,
@@ -305,27 +309,31 @@ class ScryfallCache {
     this.packCardCache = new Map();
   }
 
-  getCachedCard(cardName) {
-    return this.cardDataCache.get(cardName);
+  getCachedCard(cardName, language) {
+    const cacheKey = `${language}:${cardName}`;
+    return this.cardDataCache.get(cacheKey);
   }
 
-  setCachedCard(cardName, data) {
-    this.cardDataCache.set(cardName, data);
+  setCachedCard(cardName, language, data) {
+    const cacheKey = `${language}:${cardName}`;
+    this.cardDataCache.set(cacheKey, data);
   }
 
-  getCachedPackCard(key) {
-    return this.packCardCache.get(key);
+  getCachedPackCard(key, language) {
+    const cacheKey = `${language}:${key}`;
+    return this.packCardCache.get(cacheKey);
   }
 
-  setCachedPackCard(key, themeColor) {
-    this.packCardCache.set(key, themeColor);
+  setCachedPackCard(key, language, themeColor) {
+    const cacheKey = `${language}:${key}`;
+    this.packCardCache.set(cacheKey, themeColor);
   }
 }
 
 // Scryfall API: Query card data
-async function queryCardData(cardName, setCode, cache, rateLimiter) {
+async function queryCardData(cardName, setCode, cache, rateLimiter, language = 'en') {
   // Check cache first
-  const cachedData = cache.getCachedCard(cardName);
+  const cachedData = cache.getCachedCard(cardName, language);
   if (cachedData) {
     return cachedData;
   }
@@ -333,7 +341,17 @@ async function queryCardData(cardName, setCode, cache, rateLimiter) {
   await rateLimiter.wait();
 
   const encodedName = encodeURIComponent(cardName);
-  const url = `https://api.scryfall.com/cards/named?exact=${encodedName}`;
+
+  // For non-English languages, we need to search for the card and filter by language
+  // For English, use the faster /cards/named endpoint
+  let url;
+  if (language === 'en') {
+    url = `https://api.scryfall.com/cards/named?exact=${encodedName}`;
+  } else {
+    // Search for card with specific language
+    // Using quotes for exact name match
+    url = `https://api.scryfall.com/cards/search?q=!"${encodedName}"+lang:${language}`;
+  }
 
   const options = {
     headers: {
@@ -346,34 +364,53 @@ async function queryCardData(cardName, setCode, cache, rateLimiter) {
     const response = await httpsGet(url, options);
     const data = JSON.parse(response);
 
+    let card;
+    if (language === 'en') {
+      card = data;
+    } else {
+      // For search results, take the first match
+      if (data.data && data.data.length > 0) {
+        card = data.data[0];
+      } else {
+        throw new Error('No cards found in search results');
+      }
+    }
+
+    // Use printed_name if available (localized), otherwise fall back to name
+    const localizedName = card.printed_name || card.name;
+
     const cardData = {
-      name: data.name,
-      mana_cost: data.mana_cost || '',
-      type_line: data.type_line || 'Unknown'
+      name: localizedName,
+      originalName: card.name, // Keep English name for reference
+      mana_cost: card.mana_cost || '',
+      type_line: card.type_line || 'Unknown',
+      printed_type_line: card.printed_type_line || card.type_line || 'Unknown'
     };
 
-    cache.setCachedCard(cardName, cardData);
+    cache.setCachedCard(cardName, language, cardData);
     return cardData;
   } catch (error) {
-    console.log(`[WARN] Card not found: ${cardName} (using defaults)`);
+    console.log(`[WARN] Card not found in ${language}: ${cardName} (using defaults)`);
 
     const defaultData = {
       name: cardName,
+      originalName: cardName,
       mana_cost: '',
-      type_line: 'Unknown'
+      type_line: 'Unknown',
+      printed_type_line: 'Unknown'
     };
 
-    cache.setCachedCard(cardName, defaultData);
+    cache.setCachedCard(cardName, language, defaultData);
     return defaultData;
   }
 }
 
 // Scryfall API: Query pack card for theme color
-async function queryPackCard(packName, faceSet, cache, rateLimiter) {
+async function queryPackCard(packName, faceSet, cache, rateLimiter, language = 'en') {
   const cacheKey = `${faceSet}:${packName}`;
 
   // Check cache first
-  const cachedColor = cache.getCachedPackCard(cacheKey);
+  const cachedColor = cache.getCachedPackCard(cacheKey, language);
   if (cachedColor) {
     return cachedColor;
   }
@@ -400,7 +437,26 @@ async function queryPackCard(packName, faceSet, cache, rateLimiter) {
       const card = data.data[0];
       const oracleText = card.oracle_text || '';
       const collectorNumber = card.collector_number || '';
-      const imageUri = card.image_uris?.large || null;
+
+      let imageUri = card.image_uris?.large || null;
+
+      // For non-English languages, fetch the localized version using set/number/lang
+      if (language !== 'en' && collectorNumber) {
+        await rateLimiter.wait();
+        const localizedUrl = `https://api.scryfall.com/cards/${faceSet.toLowerCase()}/${collectorNumber}/${language}`;
+
+        try {
+          const localizedResponse = await httpsGet(localizedUrl, options);
+          const localizedCard = JSON.parse(localizedResponse);
+
+          // Use the localized image if available
+          if (localizedCard.image_uris?.large) {
+            imageUri = localizedCard.image_uris.large;
+          }
+        } catch (error) {
+          console.log(`[WARN] Localized version not found for ${packName} in ${language}, using English version`);
+        }
+      }
 
       // Extract color from oracle_text
       const colors = [];
@@ -421,7 +477,7 @@ async function queryPackCard(packName, faceSet, cache, rateLimiter) {
       }
 
       const result = { themeColor, collectorNumber, imageUri };
-      cache.setCachedPackCard(cacheKey, result);
+      cache.setCachedPackCard(cacheKey, language, result);
       return result;
     }
   } catch (error) {
@@ -430,7 +486,7 @@ async function queryPackCard(packName, faceSet, cache, rateLimiter) {
 
   // Default to colorless if not found
   const result = { themeColor: '{C}', collectorNumber: '', imageUri: null };
-  cache.setCachedPackCard(cacheKey, result);
+  cache.setCachedPackCard(cacheKey, language, result);
   return result;
 }
 
@@ -735,7 +791,7 @@ function generateOutputFilename(setCode, collectorNumber, packName) {
 }
 
 // Generate pack JSON
-function generatePackJSON(template, packData, setConfig, watermarks, collectorNumber) {
+function generatePackJSON(template, packData, setConfig, watermarks, collectorNumber, language = 'en') {
   const output = JSON.parse(JSON.stringify(template));
 
   // Determine if multicolor (has multiple color symbols)
@@ -804,6 +860,9 @@ function generatePackJSON(template, packData, setConfig, watermarks, collectorNu
   // Update set info
   output.infoSet = setConfig.set;
 
+  // Update language info (convert to uppercase: en -> EN, es -> ES, etc.)
+  output.infoLanguage = language.toUpperCase();
+
   // Update collector number (format as "F 0001", padded to 4 digits)
   let paddedNumber = collectorNumber;
   if (/^\d+$/.test(collectorNumber)) {
@@ -822,16 +881,30 @@ function generatePackJSON(template, packData, setConfig, watermarks, collectorNu
 
 // Main processing function
 async function main() {
-  // Parse CLI argument
+  // Parse CLI arguments
   const setCode = process.argv[2];
+  const cliLanguage = process.argv[3];
 
   if (!setCode) {
-    console.log('[FATAL] Usage: node generate-card-conjurer-json.js <SET_CODE>');
-    console.log('[FATAL] Example: node generate-card-conjurer-json.js TLA');
+    console.log('[FATAL] Usage: node generate-card-conjurer-json.js <SET_CODE> [LANGUAGE]');
+    console.log('[FATAL] Example: node generate-card-conjurer-json.js TLA es');
+    console.log(`[FATAL] Supported languages: ${SUPPORTED_LANGUAGES.join(', ')}`);
+    process.exit(1);
+  }
+
+  // Determine language: CLI arg > env variable > default
+  let language = cliLanguage || process.env.JUMPSTART_LANGUAGE || DEFAULT_LANGUAGE;
+  language = language.toLowerCase();
+
+  // Validate language
+  if (!SUPPORTED_LANGUAGES.includes(language)) {
+    console.log(`[FATAL] Unsupported language: ${language}`);
+    console.log(`[FATAL] Supported languages: ${SUPPORTED_LANGUAGES.join(', ')}`);
     process.exit(1);
   }
 
   console.log(`[INFO] Processing set: ${setCode}`);
+  console.log(`[INFO] Language: ${language}`);
 
   // Load configuration files
   const setsJsonPath = path.join(__dirname, 'sets.json');
@@ -923,7 +996,7 @@ async function main() {
       // Query Scryfall for each card
       const cardsWithData = [];
       for (const parsedCard of parsedCards) {
-        const cardData = await queryCardData(parsedCard.name, setConfig.set, cache, rateLimiter);
+        const cardData = await queryCardData(parsedCard.name, setConfig.set, cache, rateLimiter, language);
         cardsProcessed++;
 
         if (cardData.type_line === 'Unknown') {
@@ -937,7 +1010,7 @@ async function main() {
       }
 
       // Query pack card for theme color and collector number
-      const packCardData = await queryPackCard(packName, setConfig['face-set'], cache, rateLimiter);
+      const packCardData = await queryPackCard(packName, setConfig['face-set'], cache, rateLimiter, language);
       const themeColor = packCardData.themeColor;
       const collectorNumber = packCardData.collectorNumber;
       const imageUri = packCardData.imageUri;
@@ -980,7 +1053,7 @@ async function main() {
       };
 
       // Generate pack JSON
-      const packJSON = generatePackJSON(template, packData, setConfig, watermarks, collectorNumber);
+      const packJSON = generatePackJSON(template, packData, setConfig, watermarks, collectorNumber, language);
 
       // Write output file
       const filename = generateOutputFilename(setCode, collectorNumber, friendlyName);
