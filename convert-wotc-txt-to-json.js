@@ -1,16 +1,29 @@
-const fs = require('fs').promises;
-const path = require('path');
+const fs = require("fs").promises;
+const path = require("path");
 
-function parseCardList(fileContent, folderName = '') {
-  const lines = fileContent.split('\n');
+async function ensureOutputDirs() {
+  const outDir = path.join(__dirname, "output");
+  const jsonDecklistsDir = path.join(outDir, "json-decklists");
+
+  try {
+    await fs.mkdir(outDir, { recursive: true });
+    await fs.mkdir(jsonDecklistsDir, { recursive: true });
+  } catch (err) {
+    console.error("Failed to create required output directories:", err);
+    process.exit(1);
+  }
+}
+
+function parseCardList(fileContent, folderName = "") {
+  const lines = fileContent.split("\n");
   const cardMap = new Map();
-  const isAvatarFolder = folderName.toLowerCase() === 'avatar';
+  const isAvatarFolder = folderName.toLowerCase() === "avatar";
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    let cardLine = trimmed.replace(/\[.*?\]/g, '').trim();
+    let cardLine = trimmed.replace(/\[.*?\]/g, "").trim();
 
     if (!cardLine) continue;
 
@@ -20,8 +33,8 @@ function parseCardList(fileContent, folderName = '') {
       const count = parseInt(match[1], 10);
       let cardName = match[2].trim();
 
-      if (isAvatarFolder && cardName.toLowerCase().includes('appa')) {
-        cardName = cardName.replace(/\s+Appa/gi, '').trim();
+      if (isAvatarFolder && cardName.toLowerCase().includes("appa")) {
+        cardName = cardName.replace(/\s+Appa/gi, "").trim();
       }
 
       if (cardMap.has(cardName)) {
@@ -32,8 +45,8 @@ function parseCardList(fileContent, folderName = '') {
     } else {
       let cardName = cardLine;
 
-      if (isAvatarFolder && cardName.toLowerCase().includes('appa')) {
-        cardName = cardName.replace(/\s+Appa/gi, '').trim();
+      if (isAvatarFolder && cardName.toLowerCase().includes("appa")) {
+        cardName = cardName.replace(/\s+Appa/gi, "").trim();
       }
 
       if (cardMap.has(cardName)) {
@@ -57,10 +70,10 @@ function parseCardList(fileContent, folderName = '') {
 }
 
 async function processFolder(folderName) {
-  const folderPath = path.join('txt-from-wotc', folderName);
+  const folderPath = path.join("txt-from-wotc", folderName);
   const files = await fs.readdir(folderPath);
 
-  const txtFiles = files.filter(f => f.endsWith('.txt')).sort();
+  const txtFiles = files.filter((f) => f.endsWith(".txt")).sort();
 
   const results = [];
 
@@ -68,19 +81,25 @@ async function processFolder(folderName) {
     console.log(`Processing ${file}...`);
 
     const filePath = path.join(folderPath, file);
-    const content = await fs.readFile(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, "utf-8");
 
-    const name = file.replace('.txt', '');
+    const name = file.replace(".txt", "");
     const cards = parseCardList(content, folderName);
 
     results.push({
       name,
-      cards
+      cards,
     });
   }
 
-  const outputFilename = folderName.toLowerCase().replace(/[:\s]+/g, '-');
-  const outputPath = path.join('output', 'json-decklists', `${outputFilename}-output.json`);
+  await ensureOutputDirs();
+
+  const outputFilename = folderName.toLowerCase().replace(/[:\s]+/g, "-");
+  const outputPath = path.join(
+    "output",
+    "json-decklists",
+    `${outputFilename}-output.json`
+  );
   await fs.writeFile(outputPath, JSON.stringify(results, null, 2));
 
   console.log(`\nProcessed ${results.length} packs`);
@@ -90,7 +109,7 @@ async function processFolder(folderName) {
 const args = process.argv.slice(2);
 
 if (args.length < 1) {
-  console.error('Usage: node parse-jumpstart.js <folder-name>');
+  console.error("Usage: node parse-jumpstart.js <folder-name>");
   console.error('Example: node parse-jumpstart.js "Avatar"');
   console.error('Example: node parse-jumpstart.js "Foundations"');
   process.exit(1);
