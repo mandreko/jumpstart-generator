@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "MTG Jumpstart Card Conjurer JSON Generator",
   "scripts": {
-    "clean": "rimraf output/json-decklists/* output/cardconjurer-json-files/* output/cardconjurer-import-files/* output/front-images/*",
+    "clean": "rimraf \"output\"",
     "convert": "node run-convert-all.js",
     "generate": "node run-generate-all.js",
     "build": "npm run convert && npm run generate",
