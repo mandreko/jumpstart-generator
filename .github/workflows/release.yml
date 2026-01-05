@@ -1,0 +1,120 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all sets
+        run: npm run rebuild
+
+      - name: Create zip files for each set
+        run: |
+          mkdir -p releases
+
+          # Extract set codes from sets.json
+          sets=$(jq -r '.[].set' sets.json)
+
+          # Create zip for each set
+          for set in $sets; do
+            echo "Creating zip for $set..."
+            mkdir -p "temp/$set"
+
+            # Copy front images for this set
+            if ls output/front-images/${set}-*.jpg 1> /dev/null 2>&1; then
+              mkdir -p "temp/$set/front-images"
+              cp output/front-images/${set}-*.jpg "temp/$set/front-images/"
+            fi
+
+            # Copy the bulk import file for this set
+            if [ -f "output/cardconjurer-import-files/${set}-saved-cards.cardconjurer" ]; then
+              mkdir -p "temp/$set/cardconjurer-import-files"
+              cp "output/cardconjurer-import-files/${set}-saved-cards.cardconjurer" "temp/$set/cardconjurer-import-files/"
+            fi
+
+            # Create the zip file
+            cd temp/$set
+            zip -r "../../releases/${set}-cards.zip" .
+            cd ../..
+
+            # Cleanup temp directory
+            rm -rf "temp/$set"
+          done
+
+          # Create an all-sets zip
+          echo "Creating all-sets zip..."
+          cd output
+          zip -r "../releases/all-sets-cards.zip" front-images/ cardconjurer-import-files/
+          cd ..
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "version=manual-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: Release ${{ steps.get_version.outputs.version }}
+          body: |
+            MTG Jumpstart Card Generator - Ready-to-print cards
+
+            This release contains printable card files for all supported Jumpstart sets.
+
+            ## Available Sets
+            - **TLA** - Avatar
+            - **DMU** - Dominaria United Jumpstart
+            - **J25** - Foundations
+            - **J22** - Jumpstart 2022
+            - **LTR** - Lord of the Rings: Tales of Middle-earth Jumpstart
+            - **MOM** - March of the Machine Jumpstart
+            - **ONE** - Phyrexia: All Will Be One Jumpstart
+            - **BRO** - The Brothers' War Jumpstart
+
+            ## Files
+            Each set-specific zip contains:
+            - `front-images/` - Processed card images (738×1002px, ready for MPC)
+            - `cardconjurer-import-files/` - Bulk import file for CardConjurer.app
+
+            The `all-sets-cards.zip` contains all sets combined.
+
+            ## Usage
+            1. Download the zip for your desired set(s)
+            2. Upload the `.cardconjurer` file to CardConjurer.app
+            3. Use the Greasemonkey script to auto-download rendered cards
+            4. Upload front images to makeplayingcards.com
+
+            See the [USAGE.md](https://github.com/${{ github.repository }}/blob/main/USAGE.md) for detailed instructions.
+          draft: false
+          prerelease: false
+          files: |
+            releases/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
