@@ -738,16 +738,18 @@ function generateOutputFilename(setCode, collectorNumber, packName) {
 function generatePackJSON(template, packData, setConfig, watermarks, collectorNumber) {
   const output = JSON.parse(JSON.stringify(template));
 
-  // Determine if multicolor (has multiple color symbols)
+  // Determine if multicolor (has multiple color symbols) or colorless
   const colorCount = (packData.themeColor.match(/\{/g) || []).length;
   const isMulticolor = colorCount > 1;
+  const isColorless = packData.themeColor === '{C}';
 
   // Update frame based on theme color (frames[1] is the color frame, frames[0] is the Black Extension)
+  // Colorless cards use multicolor frame since there is no colorless frame
   let frame;
-  if (isMulticolor) {
+  if (isMulticolor || isColorless) {
     frame = COLOR_TO_FRAME_MAP['multicolor'];
   } else {
-    frame = COLOR_TO_FRAME_MAP[packData.themeColor] || COLOR_TO_FRAME_MAP['{C}'];
+    frame = COLOR_TO_FRAME_MAP[packData.themeColor];
   }
   output.frames[1].name = frame.name;
   output.frames[1].src = frame.src;
@@ -773,11 +775,12 @@ function generatePackJSON(template, packData, setConfig, watermarks, collectorNu
   output.setSymbolSource = watermarks.lowerWatermark;
 
   // Update watermark color based on theme color
+  // Colorless cards use multicolor watermark since there is no colorless frame
   let watermarkColor;
-  if (isMulticolor) {
+  if (isMulticolor || isColorless) {
     watermarkColor = COLOR_TO_WATERMARK_MAP['multicolor'];
   } else {
-    watermarkColor = COLOR_TO_WATERMARK_MAP[packData.themeColor] || COLOR_TO_WATERMARK_MAP['{C}'];
+    watermarkColor = COLOR_TO_WATERMARK_MAP[packData.themeColor];
   }
   output.watermarkLeft = watermarkColor;
 
