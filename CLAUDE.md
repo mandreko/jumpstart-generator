@@ -14,15 +14,17 @@ The end result: ready-to-print custom Jumpstart packs for makeplayingcards.com (
 
 ### Build Pipeline
 ```bash
-npm run rebuild    # Full rebuild: clean + build + render (takes 30-40 min)
+npm run rebuild    # Full rebuild: clean + build + render (takes ~10-15 min)
 npm run build      # Convert + generate (skips clean and render, ~5-10 min)
-npm run render     # Phase 3: Render card backs via Playwright (~25-30 min)
+npm run render     # Phase 3: Render card backs via Playwright (~4-5 min parallel)
 npm run convert    # Phase 1: Parse WOTC text files to JSON
 npm run generate   # Phase 2: Generate Card Conjurer files + front images
 npm run clean      # Delete all generated output files
 ```
 
 **Note:** `rebuild` includes automated card back rendering via Playwright. Use `build` for faster iteration when you don't need back images.
+
+**Parallelization:** The render phase runs all sets in parallel by default. Limit with `RENDER_PARALLEL=2 npm run render` if needed.
 
 ### Single Set Processing
 ```bash
@@ -193,7 +195,9 @@ See USAGE.md for detailed step-by-step instructions.
 - All npm scripts are cross-platform compatible (Windows/macOS/Linux)
 - Sequential processing (not parallel) to respect Scryfall rate limits
 - ~40-50 cards per set × 100ms = ~5-6 seconds API time + image downloads
-- Render phase: ~3-5 seconds per card × 368 cards = ~25-30 minutes
+- Render phase runs all sets in parallel by default (limit with `RENDER_PARALLEL` env var)
+- Each set uses 4 parallel browser pages (adjust with `RENDER_PAGES` env var)
+- With full parallelization: ~4-5 minutes for all sets (vs ~25-30 min sequential)
 - Total storage: ~260MB for all generated files (front + back images)
 
 ## Project Credits

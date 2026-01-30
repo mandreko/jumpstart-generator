@@ -4,13 +4,13 @@ const path = require('path');
 
 // Configuration
 const CARDCONJURER_URL = 'https://cardconjurer.app';
-const RENDER_WAIT_MS = 2000;
+const RENDER_WAIT_MS = 1000; // Wait for card to render after selection
 const MAX_RETRIES = 3;
 const OUTPUT_DIR = path.join(__dirname, 'output', 'back-images');
+const PARALLEL_PAGES = parseInt(process.env.RENDER_PAGES, 10) || 4; // Parallel pages per browser
 
 /**
  * Parse the .cardconjurer file to build a mapping from card key to collector number
- * The infoNumber field contains values like "F 0001"
  */
 function parseCardconjurerFile(filepath) {
   const mapping = {};
@@ -24,7 +24,6 @@ function parseCardconjurerFile(filepath) {
       const infoNumber = card.data?.infoNumber;
 
       if (key && infoNumber) {
-        // Extract numeric part from "F 0001" -> "0001"
         const match = infoNumber.match(/(\d+)/);
         if (match) {
           mapping[key] = match[1];
@@ -40,13 +39,9 @@ function parseCardconjurerFile(filepath) {
 
 /**
  * Generate filename for back image
- * Pattern: {SET}-back-{COLLECTOR_NUMBER}-{PACK_NAME}.jpg
  */
 function generateFilename(setCode, cardName, collectorMapping) {
-  // Get collector number from mapping
   const collectorNumber = collectorMapping[cardName] || '0000';
-
-  // Convert card name to filename format: "Blink (1)" -> "Blink-1"
   const packNamePart = cardName
     .replace(/\s*\((\d+)\)$/, '-$1')
     .replace(/\s+/g, '-')
@@ -56,18 +51,9 @@ function generateFilename(setCode, cardName, collectorMapping) {
 }
 
 /**
- * Wait for network to be idle and additional render time
- */
-async function waitForRender(page) {
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(RENDER_WAIT_MS);
-}
-
-/**
  * Navigate to Import/Save tab
  */
 async function navigateToImportTab(page) {
-  // Try multiple selectors for the Import/Save tab
   const tabSelectors = [
     'div#creator-menu-tabs h3:has-text("Import/Save")',
     'h3:has-text("Import/Save")',
@@ -79,48 +65,70 @@ async function navigateToImportTab(page) {
     const count = await tab.count();
     if (count > 0) {
       await tab.first().click();
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(500);
       return;
     }
   }
-
-  console.log('[WARN] Could not find Import/Save tab, continuing anyway...');
 }
 
 /**
- * Upload a .cardconjurer file
+ * Upload a .cardconjurer file and wait for cards to load
  */
 async function uploadFile(page, filepath) {
-  console.log(`[INFO] Uploading file: ${path.basename(filepath)}`);
-
-  // Navigate to Import/Save tab
   await navigateToImportTab(page);
 
-  // Find the file input in the Import/Save section (accepts .cardconjurer files)
   const importSection = page.locator('#creator-menu-import');
   let targetInput;
 
   if (await importSection.count() > 0) {
     targetInput = importSection.locator('input[type="file"]').first();
   } else {
-    // Fallback to first file input that accepts .cardconjurer
     targetInput = page.locator('input[type="file"][accept*=".cardconjurer"]').first();
   }
 
   await targetInput.setInputFiles(filepath);
 
-  // Wait for the file to be processed
-  await page.waitForTimeout(3000);
-
-  // Verify cards were loaded
+  // Poll for cards to load
   const dropdown = page.locator('#load-card-options');
-  const optionCount = await dropdown.locator('option').count();
+  let optionCount = 0;
+  const maxWait = 10000;
+  const pollInterval = 200;
+  let waited = 0;
 
-  if (optionCount <= 1) {
-    throw new Error('No cards loaded from file - check if file format is correct');
+  while (waited < maxWait) {
+    optionCount = await dropdown.locator('option').count();
+    if (optionCount > 1) break;
+    await page.waitForTimeout(pollInterval);
+    waited += pollInterval;
   }
 
-  console.log(`[INFO] Loaded ${optionCount - 1} cards from file`);
+  if (optionCount <= 1) {
+    throw new Error('No cards loaded from file');
+  }
+
+  return optionCount - 1;
+}
+
+/**
+ * Wait for saved cards to be available (for secondary pages)
+ */
+async function waitForSavedCards(page) {
+  await navigateToImportTab(page);
+
+  const dropdown = page.locator('#load-card-options');
+  let optionCount = 0;
+  const maxWait = 10000;
+  const pollInterval = 200;
+  let waited = 0;
+
+  while (waited < maxWait) {
+    optionCount = await dropdown.locator('option').count();
+    if (optionCount > 1) break;
+    await page.waitForTimeout(pollInterval);
+    waited += pollInterval;
+  }
+
+  return optionCount - 1;
 }
 
 /**
@@ -131,11 +139,8 @@ async function getCardList(page) {
   const options = await dropdown.locator('option').all();
   const cards = [];
 
-  // CardConjurer uses option index for selection (all values are "null")
   for (let i = 0; i < options.length; i++) {
     const text = await options[i].textContent();
-
-    // Skip "None selected" placeholder (index 0)
     if (text && text.trim() !== '' && text.trim() !== 'None selected') {
       cards.push({
         index: i,
@@ -144,97 +149,71 @@ async function getCardList(page) {
     }
   }
 
-  console.log(`[INFO] Found ${cards.length} cards to render`);
   return cards;
 }
 
 /**
- * Select a card from the dropdown by index and wait for it to render
+ * Process a single card
  */
-async function selectCard(page, cardIndex) {
-  // Navigate to Import/Save tab first (in case we're on a different tab)
-  await navigateToImportTab(page);
-
-  const dropdown = page.locator('#load-card-options');
-  await dropdown.selectOption({ index: cardIndex });
-  await waitForRender(page);
-}
-
-/**
- * Reset the watermark before downloading
- */
-async function resetWatermark(page) {
-  // Click the Watermark tab
-  const watermarkTab = page.locator('h3').filter({ hasText: 'Watermark' });
-  await watermarkTab.click();
-  await page.waitForTimeout(500);
-
-  // Click Reset Watermark button
-  const resetButton = page.locator('button').filter({ hasText: 'Reset Watermark' });
-  await resetButton.click();
-  await page.waitForTimeout(500);
-}
-
-/**
- * Download the currently displayed card
- */
-async function downloadCard(page, context, outputPath) {
-  // Reset watermark before downloading
-  await resetWatermark(page);
-
-  // Find and click the download button
-  const downloadButton = page.locator('h3.download').filter({ hasText: 'Download your card' });
-
-  // Set up download listener
-  const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
-  await downloadButton.click();
-
-  const download = await downloadPromise;
-  await download.saveAs(outputPath);
-
-  return true;
-}
-
-/**
- * Process a single card with retry logic
- */
-async function processCard(page, context, card, setCode, outputDir, index, total, collectorMapping) {
+async function processCard(page, card, setCode, outputDir, collectorMapping, workerId) {
   const filename = generateFilename(setCode, card.name, collectorMapping);
   const outputPath = path.join(outputDir, filename);
 
   // Skip if already exists
   if (fs.existsSync(outputPath)) {
-    console.log(`[INFO] [${index + 1}/${total}] Skipping ${card.name} (already exists)`);
-    return { success: true, skipped: true };
+    return { success: true, skipped: true, card: card.name };
   }
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      console.log(`[INFO] [${index + 1}/${total}] Processing: ${card.name}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
+      // Select card
+      const dropdown = page.locator('#load-card-options');
+      await dropdown.selectOption({ index: card.index });
+      await page.waitForTimeout(RENDER_WAIT_MS);
 
-      await selectCard(page, card.index);
-      await downloadCard(page, context, outputPath);
+      // Reset watermark
+      await page.evaluate(() => resetWatermark());
 
-      console.log(`[INFO] [${index + 1}/${total}] Downloaded: ${filename}`);
-      return { success: true, skipped: false };
+      // Download
+      const downloadButton = page.locator('h3.download').filter({ hasText: 'Download your card' });
+      const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
+      await downloadButton.click();
+
+      const download = await downloadPromise;
+      await download.saveAs(outputPath);
+
+      return { success: true, skipped: false, card: card.name, filename };
     } catch (error) {
-      console.error(`[WARN] [${index + 1}/${total}] Attempt ${attempt} failed for ${card.name}: ${error.message}`);
-
       if (attempt === MAX_RETRIES) {
-        // Take screenshot for debugging
-        const screenshotPath = path.join(outputDir, `error-${setCode}-${index}.png`);
-        try {
-          await page.screenshot({ path: screenshotPath });
-          console.error(`[ERROR] Screenshot saved to: ${screenshotPath}`);
-        } catch (screenshotError) {
-          console.error(`[ERROR] Failed to save screenshot: ${screenshotError.message}`);
-        }
-
-        return { success: false, error: error.message };
+        return { success: false, card: card.name, error: error.message };
       }
+      await page.waitForTimeout(1000);
+    }
+  }
+}
 
-      // Wait before retry
-      await page.waitForTimeout(2000);
+/**
+ * Worker function - processes cards from a shared queue
+ */
+async function cardWorker(page, cardQueue, setCode, outputDir, collectorMapping, workerId, results) {
+  while (true) {
+    const card = cardQueue.shift();
+    if (!card) break;
+
+    const result = await processCard(page, card, setCode, outputDir, collectorMapping, workerId);
+
+    if (result.success) {
+      if (result.skipped) {
+        results.skipped++;
+        console.log(`[W${workerId}] Skipped: ${result.card}`);
+      } else {
+        results.success++;
+        console.log(`[W${workerId}] Downloaded: ${result.filename}`);
+      }
+    } else {
+      results.failed++;
+      results.errors.push({ card: result.card, error: result.error });
+      console.error(`[W${workerId}] Failed: ${result.card} - ${result.error}`);
     }
   }
 }
@@ -250,54 +229,42 @@ async function renderSet(setCode) {
     `${setCode}-saved-cards.cardconjurer`
   );
 
-  // Validate input file exists
   if (!fs.existsSync(importFilePath)) {
     console.error(`[FATAL] Import file not found: ${importFilePath}`);
-    console.error('[FATAL] Run "npm run build" first to generate the .cardconjurer files');
     process.exit(1);
   }
 
-  // Ensure output directory exists
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
   console.log(`[INFO] Starting render for set: ${setCode}`);
-  console.log(`[INFO] Import file: ${importFilePath}`);
-  console.log(`[INFO] Output directory: ${OUTPUT_DIR}`);
+  console.log(`[INFO] Using ${PARALLEL_PAGES} parallel pages`);
 
-  // Launch browser (headless for CI, can set to false for local debugging)
-  const browser = await chromium.launch({
-    headless: true
-  });
-
-  const context = await browser.newContext({
-    acceptDownloads: true
-  });
-
-  const page = await context.newPage();
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ acceptDownloads: true });
 
   try {
-    // Navigate to CardConjurer
-    console.log(`[INFO] Navigating to ${CARDCONJURER_URL}`);
-    await page.goto(CARDCONJURER_URL, { waitUntil: 'networkidle' });
+    // Create first page and upload file
+    console.log(`[INFO] Uploading file...`);
+    const primaryPage = await context.newPage();
+    await primaryPage.goto(CARDCONJURER_URL, { waitUntil: 'networkidle' });
+    const cardCount = await uploadFile(primaryPage, importFilePath);
+    console.log(`[INFO] Loaded ${cardCount} cards`);
 
-    // Upload the .cardconjurer file
-    await uploadFile(page, importFilePath);
-
-    // Get list of all cards
-    const cards = await getCardList(page);
-
+    // Get card list
+    const cards = await getCardList(primaryPage);
     if (cards.length === 0) {
-      console.error('[ERROR] No cards found in the import file');
-      await browser.close();
-      process.exit(1);
+      throw new Error('No cards found');
     }
 
-    // Parse cardconjurer file to get collector numbers
+    // Parse collector numbers
     const collectorMapping = parseCardconjurerFile(importFilePath);
 
-    // Process each card
+    // Create card queue (shared array that workers pull from)
+    const cardQueue = [...cards];
+
+    // Results tracking
     const results = {
       success: 0,
       skipped: 0,
@@ -305,28 +272,37 @@ async function renderSet(setCode) {
       errors: []
     };
 
-    for (let i = 0; i < cards.length; i++) {
-      const result = await processCard(page, context, cards[i], setCode, OUTPUT_DIR, i, cards.length, collectorMapping);
+    // Determine number of workers (don't create more than cards)
+    const numWorkers = Math.min(PARALLEL_PAGES, cards.length);
+    console.log(`[INFO] Processing ${cards.length} cards with ${numWorkers} workers`);
 
-      if (result.success) {
-        if (result.skipped) {
-          results.skipped++;
-        } else {
-          results.success++;
-        }
-      } else {
-        results.failed++;
-        results.errors.push({ card: cards[i].name, error: result.error });
-      }
+    // Create additional pages
+    const pages = [primaryPage];
+    for (let i = 1; i < numWorkers; i++) {
+      const page = await context.newPage();
+      await page.goto(CARDCONJURER_URL, { waitUntil: 'networkidle' });
+      await waitForSavedCards(page);
+      pages.push(page);
     }
+
+    // Start workers
+    const startTime = Date.now();
+    const workers = pages.map((page, i) =>
+      cardWorker(page, cardQueue, setCode, OUTPUT_DIR, collectorMapping, i + 1, results)
+    );
+
+    await Promise.all(workers);
+
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
     // Summary
     console.log('\n[INFO] ========== Render Summary ==========');
     console.log(`[INFO] Set: ${setCode}`);
     console.log(`[INFO] Total cards: ${cards.length}`);
     console.log(`[INFO] Downloaded: ${results.success}`);
-    console.log(`[INFO] Skipped (existing): ${results.skipped}`);
+    console.log(`[INFO] Skipped: ${results.skipped}`);
     console.log(`[INFO] Failed: ${results.failed}`);
+    console.log(`[INFO] Time: ${duration}s`);
 
     if (results.errors.length > 0) {
       console.log('\n[ERROR] Failed cards:');
@@ -342,7 +318,7 @@ async function renderSet(setCode) {
     }
 
   } catch (error) {
-    console.error(`[FATAL] Error during rendering: ${error.message}`);
+    console.error(`[FATAL] Error: ${error.message}`);
     await browser.close();
     process.exit(1);
   }
@@ -354,6 +330,7 @@ const args = process.argv.slice(2);
 if (args.length === 0) {
   console.error('Usage: node render-card-backs.js <SET_CODE>');
   console.error('Example: node render-card-backs.js J22');
+  console.error('Set RENDER_PAGES env var to control parallel pages (default: 4)');
   process.exit(1);
 }
 

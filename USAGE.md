@@ -11,7 +11,7 @@ For most users, simply run:
 ```bash
 npm install                      # One-time setup
 npx playwright install chromium  # One-time browser setup
-npm run rebuild                  # Full build (~30-40 min)
+npm run rebuild                  # Full build (~10-15 min)
 ```
 
 This generates all card images (front and back) ready for printing. Skip to [Step 3: Print](#step-3-print-with-mpc-or-notmpc).
@@ -41,7 +41,7 @@ This runs all three phases:
 npm run build
 ```
 
-Use this for faster iteration when you don't need back images (~5-10 min vs ~30-40 min).
+Use this for faster iteration when you don't need back images (~5-10 min vs ~10-15 min).
 
 ### Single Set Processing
 
@@ -85,6 +85,30 @@ Front and back images share the same naming pattern for easy matching:
 ### Ordering
 
 Visit [NotMPC](https://notmpc.com/custom-game-cards/) or similar services and use their **double-sided game cards** option to upload your fronts and backs.
+
+---
+
+## Configuration
+
+### Environment Variables
+
+| Variable          | Default   | Description                                      |
+| ----------------- | --------- | ------------------------------------------------ |
+| `RENDER_PARALLEL` | Unlimited | Max number of sets to render in parallel         |
+| `RENDER_PAGES`    | 4         | Number of parallel browser pages per set         |
+
+**Examples:**
+
+```bash
+# Render all sets sequentially (lower memory usage)
+RENDER_PARALLEL=1 npm run render
+
+# Use 8 parallel pages per set (faster on powerful machines)
+RENDER_PAGES=8 npm run render
+
+# Single set with more parallelism
+RENDER_PAGES=8 node render-card-backs.js J22
+```
 
 ---
 
