@@ -6,8 +6,9 @@
     "clean": "rimraf \"output\"",
     "convert": "node run-convert-all.js",
     "generate": "node run-generate-all.js",
+    "render": "node run-render-all.js",
     "build": "npm run convert && npm run generate",
-    "rebuild": "npm run clean && npm run build"
+    "rebuild": "npm run clean && npm run build && npm run render"
   },
   "keywords": [
     "mtg",
@@ -21,6 +22,7 @@
     "node": ">=14.0.0"
   },
   "devDependencies": {
+    "playwright": "^1.40.0",
     "rimraf": "^5.0.0"
   }
 }

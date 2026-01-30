@@ -719,7 +719,9 @@ function generateCollectorNumber(index) {
 }
 
 // Generate output filename
-function generateOutputFilename(setCode, collectorNumber, packName) {
+// For JSON: {SET}-{COLLECTOR_NUMBER}-{PACK_NAME}.json
+// For images: {SET}-front-{COLLECTOR_NUMBER}-{PACK_NAME}.jpg
+function generateOutputFilename(setCode, collectorNumber, packName, extension = '.json') {
   // Pad collector number with zeros if it's purely numeric
   let numberPart = collectorNumber;
   if (/^\d+$/.test(collectorNumber)) {
@@ -731,7 +733,12 @@ function generateOutputFilename(setCode, collectorNumber, packName) {
     .replace(/\s*\((\d+)\)$/, '-$1')
     .replace(/\s+/g, '-');
 
-  return `${setCode}-${numberPart}-${filenamePart}.json`;
+  // For front images, use {SET}-front-{NUMBER}-{NAME}.jpg format
+  if (extension === '-front.jpg') {
+    return `${setCode}-front-${numberPart}-${filenamePart}.jpg`;
+  }
+
+  return `${setCode}-${numberPart}-${filenamePart}${extension}`;
 }
 
 // Generate pack JSON
@@ -949,7 +956,7 @@ async function main() {
       if (imageUri) {
         try {
           // Generate image filename (e.g., TLA-0001-Aang.jpg)
-          const imageFilename = generateOutputFilename(setCode, collectorNumber, formatFriendlyPackName(packName)).replace('.json', '.jpg');
+          const imageFilename = generateOutputFilename(setCode, collectorNumber, formatFriendlyPackName(packName), '-front.jpg');
           const imagePath = path.join(imagesDir, imageFilename);
 
           await downloadImage(imageUri, imagePath);

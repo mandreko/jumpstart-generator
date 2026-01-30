@@ -61,8 +61,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
       - name: Build all sets
         run: npm run rebuild
+
+      - name: Render card backs with Playwright
+        run: npm run render
 
       - name: Create zip files for each set
         run: |
@@ -80,6 +86,12 @@ jobs:
             if ls output/front-images/${set}-*.jpg 1> /dev/null 2>&1; then
               mkdir -p "temp/$set/front-images"
               cp output/front-images/${set}-*.jpg "temp/$set/front-images/"
+            fi
+
+            # Copy back images for this set
+            if ls output/back-images/${set}-*.jpg 1> /dev/null 2>&1; then
+              mkdir -p "temp/$set/back-images"
+              cp output/back-images/${set}-*.jpg "temp/$set/back-images/"
             fi
 
             # Copy the bulk import file for this set
@@ -100,7 +112,7 @@ jobs:
           # Create an all-sets zip
           echo "Creating all-sets zip..."
           cd output
-          zip -r "../releases/all-sets-cards.zip" front-images/ cardconjurer-import-files/
+          zip -r "../releases/all-sets-cards.zip" front-images/ back-images/ cardconjurer-import-files/
           cd ..
 
       - name: Get version from tag
@@ -135,16 +147,16 @@ jobs:
 
             ## Files
             Each set-specific zip contains:
-            - `front-images/` - Processed card images (738×1002px, ready for MPC)
+            - `front-images/` - Processed card front images (738×1002px, ready for MPC)
+            - `back-images/` - Rendered card back images from CardConjurer (ready for MPC)
             - `cardconjurer-import-files/` - Bulk import file for CardConjurer.app
 
             The `all-sets-cards.zip` contains all sets combined.
 
             ## Usage
             1. Download the zip for your desired set(s)
-            2. Upload the `.cardconjurer` file to CardConjurer.app
-            3. Use the Greasemonkey script to auto-download rendered cards
-            4. Upload front images to makeplayingcards.com
+            2. Upload front-images and back-images to makeplayingcards.com
+            3. (Optional) Use the `.cardconjurer` file with CardConjurer.app for customization
 
             See the [USAGE.md](https://github.com/${{ github.repository }}/blob/main/USAGE.md) for detailed instructions.
           draft: false
