@@ -28,7 +28,9 @@ const COLOR_TO_WATERMARK_MAP = {
   'multicolor': '#cab34d'
 };
 
-const SCRYFALL_DELAY_MS = 100;
+const SCRYFALL_DELAY_MS = 150; // Increased to avoid rate limiting
+const SCRYFALL_MAX_RETRIES = 3;
+const SCRYFALL_RETRY_DELAY_MS = 1000;
 
 // Card Conjurer template (embedded)
 const CARD_TEMPLATE = {
@@ -322,15 +324,13 @@ class ScryfallCache {
   }
 }
 
-// Scryfall API: Query card data
+// Scryfall API: Query card data with retry logic
 async function queryCardData(cardName, setCode, cache, rateLimiter) {
   // Check cache first
   const cachedData = cache.getCachedCard(cardName);
   if (cachedData) {
     return cachedData;
   }
-
-  await rateLimiter.wait();
 
   const encodedName = encodeURIComponent(cardName);
   const url = `https://api.scryfall.com/cards/named?exact=${encodedName}`;
@@ -342,33 +342,48 @@ async function queryCardData(cardName, setCode, cache, rateLimiter) {
     }
   };
 
-  try {
-    const response = await httpsGet(url, options);
-    const data = JSON.parse(response);
+  for (let attempt = 1; attempt <= SCRYFALL_MAX_RETRIES; attempt++) {
+    await rateLimiter.wait();
 
-    const cardData = {
-      name: data.name,
-      mana_cost: data.mana_cost || '',
-      type_line: data.type_line || 'Unknown'
-    };
+    try {
+      const response = await httpsGet(url, options);
+      const data = JSON.parse(response);
 
-    cache.setCachedCard(cardName, cardData);
-    return cardData;
-  } catch (error) {
-    console.log(`[WARN] Card not found: ${cardName} (using defaults)`);
+      const cardData = {
+        name: data.name,
+        mana_cost: data.mana_cost || '',
+        type_line: data.type_line || 'Unknown'
+      };
 
-    const defaultData = {
-      name: cardName,
-      mana_cost: '',
-      type_line: 'Unknown'
-    };
+      cache.setCachedCard(cardName, cardData);
+      return cardData;
+    } catch (error) {
+      const isRateLimit = error.message && error.message.includes('429');
+      const isLastAttempt = attempt === SCRYFALL_MAX_RETRIES;
 
-    cache.setCachedCard(cardName, defaultData);
-    return defaultData;
+      if (isRateLimit && !isLastAttempt) {
+        console.log(`[WARN] Rate limited, retrying ${cardName} (attempt ${attempt}/${SCRYFALL_MAX_RETRIES})...`);
+        await sleep(SCRYFALL_RETRY_DELAY_MS * attempt); // Exponential backoff
+        continue;
+      }
+
+      if (isLastAttempt) {
+        console.log(`[WARN] Card not found: ${cardName} (using defaults)`);
+      }
+    }
   }
+
+  const defaultData = {
+    name: cardName,
+    mana_cost: '',
+    type_line: 'Unknown'
+  };
+
+  cache.setCachedCard(cardName, defaultData);
+  return defaultData;
 }
 
-// Scryfall API: Query pack card for theme color
+// Scryfall API: Query pack card for theme color with retry logic
 async function queryPackCard(packName, faceSet, cache, rateLimiter) {
   const cacheKey = `${faceSet}:${packName}`;
 
@@ -377,8 +392,6 @@ async function queryPackCard(packName, faceSet, cache, rateLimiter) {
   if (cachedColor) {
     return cachedColor;
   }
-
-  await rateLimiter.wait();
 
   // Remove variation indicators for the search
   const cleanPackName = packName.replace(/-\d+$/, '').replace(/\(\d+\)$/, '').trim();
@@ -392,40 +405,57 @@ async function queryPackCard(packName, faceSet, cache, rateLimiter) {
     }
   };
 
-  try {
-    const response = await httpsGet(url, options);
-    const data = JSON.parse(response);
+  for (let attempt = 1; attempt <= SCRYFALL_MAX_RETRIES; attempt++) {
+    await rateLimiter.wait();
 
-    if (data.data && data.data.length > 0) {
-      const card = data.data[0];
-      const oracleText = card.oracle_text || '';
-      const collectorNumber = card.collector_number || '';
-      const imageUri = card.image_uris?.large || null;
+    try {
+      const response = await httpsGet(url, options);
+      const data = JSON.parse(response);
 
-      // Extract color from oracle_text
-      const colors = [];
-      if (/{W}/.test(oracleText)) colors.push('W');
-      if (/{U}/.test(oracleText)) colors.push('U');
-      if (/{B}/.test(oracleText)) colors.push('B');
-      if (/{R}/.test(oracleText)) colors.push('R');
-      if (/{G}/.test(oracleText)) colors.push('G');
+      if (data.data && data.data.length > 0) {
+        const card = data.data[0];
+        const oracleText = card.oracle_text || '';
+        const collectorNumber = card.collector_number || '';
+        const imageUri = card.image_uris?.large || null;
 
-      let themeColor;
-      if (colors.length === 0) {
-        themeColor = '{C}';
-      } else if (colors.length === 1) {
-        themeColor = `{${colors[0]}}`;
-      } else {
-        // For multicolor, store all colors in WUBRG order
-        themeColor = colors.map(c => `{${c}}`).join('');
+        // Extract color from oracle_text
+        const colors = [];
+        if (/{W}/.test(oracleText)) colors.push('W');
+        if (/{U}/.test(oracleText)) colors.push('U');
+        if (/{B}/.test(oracleText)) colors.push('B');
+        if (/{R}/.test(oracleText)) colors.push('R');
+        if (/{G}/.test(oracleText)) colors.push('G');
+
+        let themeColor;
+        if (colors.length === 0) {
+          themeColor = '{C}';
+        } else if (colors.length === 1) {
+          themeColor = `{${colors[0]}}`;
+        } else {
+          // For multicolor, store all colors in WUBRG order
+          themeColor = colors.map(c => `{${c}}`).join('');
+        }
+
+        const result = { themeColor, collectorNumber, imageUri };
+        cache.setCachedPackCard(cacheKey, result);
+        return result;
+      }
+      // No data found - this is a genuine "not found", not an error
+      break;
+    } catch (error) {
+      const isRateLimit = error.message && error.message.includes('429');
+      const isLastAttempt = attempt === SCRYFALL_MAX_RETRIES;
+
+      if (isRateLimit && !isLastAttempt) {
+        console.log(`[WARN] Rate limited, retrying pack card ${packName} (attempt ${attempt}/${SCRYFALL_MAX_RETRIES})...`);
+        await sleep(SCRYFALL_RETRY_DELAY_MS * attempt); // Exponential backoff
+        continue;
       }
 
-      const result = { themeColor, collectorNumber, imageUri };
-      cache.setCachedPackCard(cacheKey, result);
-      return result;
+      if (isLastAttempt) {
+        console.log(`[WARN] Pack card not found for: ${packName} in set ${faceSet}`);
+      }
     }
-  } catch (error) {
-    console.log(`[WARN] Pack card not found for: ${packName} in set ${faceSet}`);
   }
 
   // Default to colorless if not found
@@ -719,7 +749,9 @@ function generateCollectorNumber(index) {
 }
 
 // Generate output filename
-function generateOutputFilename(setCode, collectorNumber, packName) {
+// For JSON: {SET}-{COLLECTOR_NUMBER}-{PACK_NAME}.json
+// For images: {SET}-front-{COLLECTOR_NUMBER}-{PACK_NAME}.jpg
+function generateOutputFilename(setCode, collectorNumber, packName, extension = '.json') {
   // Pad collector number with zeros if it's purely numeric
   let numberPart = collectorNumber;
   if (/^\d+$/.test(collectorNumber)) {
@@ -731,7 +763,12 @@ function generateOutputFilename(setCode, collectorNumber, packName) {
     .replace(/\s*\((\d+)\)$/, '-$1')
     .replace(/\s+/g, '-');
 
-  return `${setCode}-${numberPart}-${filenamePart}.json`;
+  // For front images, use {SET}-front-{NUMBER}-{NAME}.jpg format
+  if (extension === '-front.jpg') {
+    return `${setCode}-front-${numberPart}-${filenamePart}.jpg`;
+  }
+
+  return `${setCode}-${numberPart}-${filenamePart}${extension}`;
 }
 
 // Generate pack JSON
@@ -949,7 +986,7 @@ async function main() {
       if (imageUri) {
         try {
           // Generate image filename (e.g., TLA-0001-Aang.jpg)
-          const imageFilename = generateOutputFilename(setCode, collectorNumber, formatFriendlyPackName(packName)).replace('.json', '.jpg');
+          const imageFilename = generateOutputFilename(setCode, collectorNumber, formatFriendlyPackName(packName), '-front.jpg');
           const imagePath = path.join(imagesDir, imageFilename);
 
           await downloadImage(imageUri, imagePath);

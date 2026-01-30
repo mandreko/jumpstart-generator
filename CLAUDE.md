@@ -14,12 +14,17 @@ The end result: ready-to-print custom Jumpstart packs for makeplayingcards.com (
 
 ### Build Pipeline
 ```bash
-npm run rebuild    # Full rebuild: clean + convert + generate (takes 5-10 min)
-npm run build      # Convert + generate (skips clean)
+npm run rebuild    # Full rebuild: clean + build + render (takes ~10-15 min)
+npm run build      # Convert + generate (skips clean and render, ~5-10 min)
+npm run render     # Phase 3: Render card backs via Playwright (~4-5 min parallel)
 npm run convert    # Phase 1: Parse WOTC text files to JSON
-npm run generate   # Phase 2: Generate Card Conjurer files + process images
+npm run generate   # Phase 2: Generate Card Conjurer files + front images
 npm run clean      # Delete all generated output files
 ```
+
+**Note:** `rebuild` includes automated card back rendering via Playwright. Use `build` for faster iteration when you don't need back images.
+
+**Parallelization:** The render phase runs all sets in parallel by default. Limit with `RENDER_PARALLEL=2 npm run render` if needed.
 
 ### Single Set Processing
 ```bash
@@ -37,14 +42,14 @@ node generate-card-conjurer-json.js TLA
 ```
 INPUT: txt-from-wotc/{set-name}/*.txt
   ↓
-convert-wotc-txt-to-json.js
+convert-wotc-txt-to-json.js (Phase 1)
   ├─ Regex parsing: ^(\d+)\s+(.+)$
   ├─ Groups cards by pack (filename)
   └─ Deduplicates and sums quantities
   ↓
 OUTPUT: output/json-decklists/{set-name}-output.json
   ↓
-generate-card-conjurer-json.js
+generate-card-conjurer-json.js (Phase 2)
   ├─ Queries Scryfall API (rate-limited 100ms)
   ├─ Downloads card images (672×936px)
   ├─ Processes with ImageMagick:
@@ -56,7 +61,16 @@ generate-card-conjurer-json.js
 OUTPUT (3 types):
   ├─ output/cardconjurer-json-files/*.json (individual cards)
   ├─ output/cardconjurer-import-files/*.cardconjurer (bulk import)
-  └─ output/front-images/*.jpg (processed images, ~125MB total)
+  └─ output/front-images/*.jpg (front images, ~125MB total)
+  ↓
+render-card-backs.js (Phase 3)
+  ├─ Launches headless Chromium via Playwright
+  ├─ Uploads .cardconjurer file to CardConjurer.app
+  ├─ Iterates through saved cards dropdown
+  ├─ Resets watermark and downloads each card
+  └─ Saves rendered images with matching filenames
+  ↓
+OUTPUT: output/back-images/*.jpg (back images, ~125MB total)
 ```
 
 ## Key Configuration: sets.json
@@ -103,9 +117,14 @@ This 1,044-line file is the processing engine. Key components:
 ## File Naming Conventions
 
 **Output files follow this pattern:**
-- JSON cards: `{SET_CODE}-{COLLECTOR_NUMBER}-{PACK_NAME}.json`
-- Images: `{SET_CODE}-{COLLECTOR_NUMBER}-{PACK_NAME}.jpg`
-- Import file: `{SET_CODE}-saved-cards.cardconjurer`
+- JSON cards: `{SET}-{COLLECTOR_NUMBER}-{PACK_NAME}.json`
+- Front images: `{SET}-front-{COLLECTOR_NUMBER}-{PACK_NAME}.jpg`
+- Back images: `{SET}-back-{COLLECTOR_NUMBER}-{PACK_NAME}.jpg`
+- Import file: `{SET}-saved-cards.cardconjurer`
+
+**Examples:**
+- `J22-front-0001-Blink-1.jpg` (front image)
+- `J22-back-0001-Blink-1.jpg` (back image)
 
 **Collector numbers:** `F 0001` format (F = Jumpstart Face card, 4 digits)
 
@@ -115,6 +134,9 @@ This 1,044-line file is the processing engine. Key components:
 - **Node.js**: v14+ (specified in package.json engines)
 - **ImageMagick**: CLI tool for image processing
   - Commands used: `magick identify`, `magick ... -fill ... -draw ...`
+- **Playwright**: Browser automation for rendering card backs
+  - Installed via npm as devDependency
+  - Uses headless Chromium
 
 ### APIs
 - **Scryfall API** (api.scryfall.com)
@@ -147,23 +169,24 @@ Log levels: `[INFO]`, `[WARN]`, `[ERROR]`, `[FATAL]`
 
 ```
 output/
-├── json-decklists/           # Phase 1 output (~165KB)
+├── json-decklists/            # Phase 1 output (~165KB)
 │   └── {set-name}-output.json
-├── cardconjurer-json-files/  # Individual cards (~6.2MB, 368 files)
+├── cardconjurer-json-files/   # Individual cards (~6.2MB, 368 files)
 │   └── {SET}-{NUM}-{PACK}.json
-├── cardconjurer-import-files/ # Bulk import files (~6.2MB, 7 files)
+├── cardconjurer-import-files/ # Bulk import files (~6.2MB, 8 files)
 │   └── {SET}-saved-cards.cardconjurer
-└── front-images/             # Processed images (~125MB, 368 files)
-    └── {SET}-{NUM}-{PACK}.jpg
+├── front-images/              # Card fronts (~125MB, 368 files)
+│   └── {SET}-front-{NUM}-{PACK}.jpg
+└── back-images/               # Card backs (~125MB, 368 files)
+    └── {SET}-back-{NUM}-{PACK}.jpg
 ```
 
 ## Workflow for End Users
 
-1. `npm install` (one-time setup)
-2. `npm run rebuild` (5-10 minutes total)
-3. Upload `output/cardconjurer-import-files/*.cardconjurer` to CardConjurer.app
-4. Use Greasemonkey script to auto-download rendered cards
-5. Upload `output/front-images/*.jpg` as card fronts to NotMPC
+1. `npm install` (one-time setup, includes Playwright)
+2. `npx playwright install chromium` (one-time browser setup)
+3. `npm run rebuild` (30-40 minutes total)
+4. Upload `output/front-images/*.jpg` and `output/back-images/*.jpg` to NotMPC
 
 See USAGE.md for detailed step-by-step instructions.
 
@@ -172,7 +195,10 @@ See USAGE.md for detailed step-by-step instructions.
 - All npm scripts are cross-platform compatible (Windows/macOS/Linux)
 - Sequential processing (not parallel) to respect Scryfall rate limits
 - ~40-50 cards per set × 100ms = ~5-6 seconds API time + image downloads
-- Total storage: ~137MB for all generated files
+- Render phase runs all sets in parallel by default (limit with `RENDER_PARALLEL` env var)
+- Each set uses 4 parallel browser pages (adjust with `RENDER_PAGES` env var)
+- With full parallelization: ~4-5 minutes for all sets (vs ~25-30 min sequential)
+- Total storage: ~260MB for all generated files (front + back images)
 
 ## Project Credits
 

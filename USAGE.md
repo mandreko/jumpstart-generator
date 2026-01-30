@@ -4,98 +4,83 @@ This guide walks you through the complete workflow for generating and printing c
 
 ---
 
-## Step 1: Import Text File Inventories to JSON Format
+## Quick Start (Recommended)
 
-Starting with raw deck lists from Wizards of the Coast or other sources such as [mtg.wtf/deck](https://mtg.wtf/deck), you can parse them into a friendly JSON format.
-
-### Single Set Conversion
+For most users, simply run:
 
 ```bash
-node convert-wotc-txt-to-json.js
+npm install                      # One-time setup
+npx playwright install chromium  # One-time browser setup
+npm run rebuild                  # Full build (~10-15 min)
 ```
 
-### Batch Conversion (All Sets)
-
-```bash
-node run-convert-all.js
-```
-
-This processes all sets defined in `sets.json`.
+This generates all card images (front and back) ready for printing. Skip to [Step 3: Print](#step-3-print-with-mpc-or-notmpc).
 
 ---
 
-## Step 2: Convert JSON to CardConjurer Import Format
+## Step 1: Generate Card Images
 
-Transform your JSON deck files into a format that CardConjurer can import.
-
-### Single Set
+### Full Build (Recommended)
 
 ```bash
-node generate-card-conjurer-json.js
+npm run rebuild
 ```
 
-### All Sets
+This runs all three phases:
+1. **Convert**: Parse WOTC text files to JSON
+2. **Generate**: Create Card Conjurer files and download front images
+3. **Render**: Use Playwright to render card backs from CardConjurer.app
+
+**Output:**
+- `output/front-images/` - Card front images (e.g., `J22-front-0001-Blink-1.jpg`)
+- `output/back-images/` - Card back images (e.g., `J22-back-0001-Blink-1.jpg`)
+
+### Quick Build (Without Back Images)
 
 ```bash
-node run-generate-all.js
+npm run build
 ```
 
-This iterates over all JSON files from the previous step.
+Use this for faster iteration when you don't need back images (~5-10 min vs ~10-15 min).
 
-**Output Location:** `output/cardconjurer-import-files/`
+### Single Set Processing
+
+```bash
+node convert-wotc-txt-to-json.js "Avatar"   # Phase 1: Parse text files
+node generate-card-conjurer-json.js TLA      # Phase 2: Generate front images
+node render-card-backs.js TLA                # Phase 3: Render back images
+```
 
 ---
 
-## Step 3: Import into CardConjurer
+## Step 2: Manual CardConjurer Workflow (Optional)
+
+If you prefer to manually customize cards or the automated rendering fails, you can use CardConjurer directly.
 
 1. **Visit** [CardConjurer](https://cardconjurer.app/)
 2. **Navigate** to the **"Import/Save"** tab
-3. **Clear existing cards:**
-   - Check the "Load a saved card" dropdown
-   - If cards are present, click **"Delete all"** to clear them
-4. **Upload your file:**
-   - Click **"Browse..."** under "Upload previously downloaded file of saved cards"
-   - Select your generated file from `output/cardconjurer-import-files/`
-5. **Verify cards:**
-   - Select a card from the "Load a saved card" dropdown
-   - Ensure it renders correctly
-6. **Download:** Click the **"Download your card"** link for each card
-
-> **Note:** Manually downloading each card can be tedious. See the next section for automation.
+3. **Upload your file** from `output/cardconjurer-import-files/`
+4. **Download cards** manually or use the Greasemonkey script:
+   - Install [Tampermonkey](https://www.tampermonkey.net/)
+   - Install [Download All Cards on CardConjurer](https://greasyfork.org/en/scripts/560030-download-all-cards-on-cardconjurer)
+   - Click the **"Download all"** button
 
 ---
 
-## Step 4: Automate Downloads with Greasemonkey (Optional)
+## Step 3: Print with MPC or NotMPC
 
-To avoid manually downloading each card, use the provided Greasemonkey script.
-
-### Installation
-
-1. **Install a Greasemonkey extension** for your browser:
-   - [Tampermonkey](https://www.tampermonkey.net/) (recommended, tested on Firefox)
-   - Greasemonkey
-   - Violentmonkey
-
-2. **Install the script** from Greasy Fork:
-   [Download All Cards on CardConjurer](https://greasyfork.org/en/scripts/560030-download-all-cards-on-cardconjurer)
-
-### Usage
-
-1. Reload [CardConjurer](https://cardconjurer.app)
-2. Click the **"Download all"** button
-
-The script will automatically iterate through and download all cards.
-
----
-
-## Step 5: Print with MPC or NotMPC
-
-Using your downloaded cards, you can now order professional prints.
+Using your generated images, order professional prints.
 
 ### What You Need
 
-- **Card Backs:** Downloaded images from CardConjurer
-- **Card Fronts:** Images from `output/front-images/`
+- **Card Fronts:** `output/front-images/*.jpg`
+- **Card Backs:** `output/back-images/*.jpg`
+
+### File Naming
+
+Front and back images share the same naming pattern for easy matching:
+- Front: `J22-front-0001-Blink-1.jpg`
+- Back: `J22-back-0001-Blink-1.jpg`
 
 ### Ordering
 
@@ -103,12 +88,36 @@ Visit [NotMPC](https://notmpc.com/custom-game-cards/) or similar services and us
 
 ---
 
+## Configuration
+
+### Environment Variables
+
+| Variable          | Default   | Description                                      |
+| ----------------- | --------- | ------------------------------------------------ |
+| `RENDER_PARALLEL` | Unlimited | Max number of sets to render in parallel         |
+| `RENDER_PAGES`    | 4         | Number of parallel browser pages per set         |
+
+**Examples:**
+
+```bash
+# Render all sets sequentially (lower memory usage)
+RENDER_PARALLEL=1 npm run render
+
+# Use 8 parallel pages per set (faster on powerful machines)
+RENDER_PAGES=8 npm run render
+
+# Single set with more parallelism
+RENDER_PAGES=8 node render-card-backs.js J22
+```
+
+---
+
 ## Quick Reference
 
-| Step                            | Command                    | Output                              |
-| ------------------------------- | -------------------------- | ----------------------------------- |
-| 1. Parse text files             | `node run-convert-all.js`  | JSON files                          |
-| 2. Generate CardConjurer format | `node run-generate-all.js` | `output/cardconjurer-import-files/` |
-| 3. Import to CardConjurer       | Manual upload              | Rendered cards                      |
-| 4. Download cards               | Greasemonkey script        | Card images                         |
-| 5. Print cards                  | Upload to NotMPC           | Physical cards                      |
+| Task                    | Command                              | Output                        |
+| ----------------------- | ------------------------------------ | ----------------------------- |
+| Full build (all images) | `npm run rebuild`                    | front-images + back-images    |
+| Quick build (no backs)  | `npm run build`                      | front-images only             |
+| Render backs only       | `npm run render`                     | back-images (all sets)        |
+| Single set backs        | `node render-card-backs.js J22`      | back-images (one set)         |
+| Clean output            | `npm run clean`                      | Deletes all generated files   |
