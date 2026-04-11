@@ -26,15 +26,21 @@ jobs:
 
       - name: Install ImageMagick 7 from source
         run: |
+          set -e
+
           # Install build dependencies
           sudo apt-get update
           sudo apt-get install -y build-essential wget pkg-config \
             libjpeg-dev libpng-dev libtiff-dev libwebp-dev \
             libopenjp2-7-dev libfreetype6-dev libfontconfig1-dev libltdl-dev
 
-          # Download and extract ImageMagick 7
-          IMAGEMAGICK_VERSION=7.1.2-12
+          # Download ImageMagick 7
+          IMAGEMAGICK_VERSION=7.1.2-18
           wget https://github.com/ImageMagick/ImageMagick/archive/refs/tags/${IMAGEMAGICK_VERSION}.tar.gz
+
+          # Verify integrity before extracting
+          echo "168326e62c2ca5608a660e030b9777c7200458f9eb128854867e9bf20e1aa3d603a819aa3095fb3cf13133ceb9a9c9859374b7ce872bebb179c3afdf943ec831" | sha512sum -c
+
           tar xzf ${IMAGEMAGICK_VERSION}.tar.gz
           cd ImageMagick-${IMAGEMAGICK_VERSION}
 
