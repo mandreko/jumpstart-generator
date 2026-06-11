@@ -142,6 +142,7 @@ jobs:
             This release contains printable card files for all supported Jumpstart sets.
 
             ## Available Sets
+            - **MSC** - Marvel Super Heroes Jumpstart
             - **TLA** - Avatar
             - **DMU** - Dominaria United Jumpstart
             - **J25** - Foundations

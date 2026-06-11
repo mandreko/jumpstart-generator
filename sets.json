@@ -66,6 +66,7 @@
   {
     "set": "MSH",
     "face-set": "FMSC",
+    "fallback-sets": ["MSH", "MSC"],
     "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/build/svg/set/MSH/WM.svg",
     "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/build/svg/set/MSH/C.svg",
     "txt-location": "library/Marvel Super Heroes Jumpstart/",
