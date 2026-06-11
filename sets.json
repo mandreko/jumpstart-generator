@@ -62,5 +62,13 @@
     "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/dev/svg/set/BRO/C.svg",
     "txt-location": "library/The Brothers' War Jumpstart/",
     "intermediate-json": "the-brothers'-war-jumpstart-output.json"
+  },
+  {
+    "set": "MSH",
+    "face-set": "FMSC",
+    "background-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/build/svg/set/MSH/WM.svg",
+    "lower-watermark": "https://raw.githubusercontent.com/pappnu/mtg-vectors/refs/heads/build/svg/set/MSH/C.svg",
+    "txt-location": "library/Marvel Super Heroes Jumpstart/",
+    "intermediate-json": "marvel-super-heroes-jumpstart-output.json"
   }
 ]
