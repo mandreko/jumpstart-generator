@@ -16,7 +16,7 @@ jobs:
           # AWS CLI is already installed in GitHub runners
           aws --version
 
-          # Configure AWS CLI for CloudFlare R2
+          # Configure AWS CLI for CloudFlare R2 (use token for both fields)
           aws configure set aws_access_key_id ${{ secrets.CLOUDFLARE_API_TOKEN }}
           aws configure set aws_secret_access_key ${{ secrets.CLOUDFLARE_API_TOKEN }}
           aws configure set default.region auto
@@ -39,7 +39,7 @@ jobs:
           # Test upload to R2
           echo "Testing upload to CloudFlare R2..."
           aws s3 cp "MSH-test-cards.zip" "s3://${{ secrets.R2_BUCKET_NAME }}/test/MSH-test-cards.zip" \
-            --endpoint-url "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+            --endpoint-url "${{ secrets.R2_ENDPOINT_URL }}"
 
           echo "Upload complete! Check: https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/test/MSH-test-cards.zip"
 
