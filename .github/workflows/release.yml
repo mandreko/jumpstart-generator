@@ -39,7 +39,7 @@ jobs:
           wget https://github.com/ImageMagick/ImageMagick/archive/refs/tags/${IMAGEMAGICK_VERSION}.tar.gz
 
           # Verify integrity before extracting
-          echo "168326e62c2ca5608a660e030b9777c7200458f9eb128854867e9bf20e1aa3d603a819aa3095fb3cf13133ceb9a9c9859374b7ce872bebb179c3afdf943ec831" | sha512sum -c
+          echo "168326e62c2ca5608a660e030b9777c7200458f9eb128854867e9bf20e1aa3d603a819aa3095fb3cf13133ceb9a9c9859374b7ce872bebb179c3afdf943ec831  ${IMAGEMAGICK_VERSION}.tar.gz" | sha512sum -c
 
           tar xzf ${IMAGEMAGICK_VERSION}.tar.gz
           cd ImageMagick-${IMAGEMAGICK_VERSION}
