@@ -17,8 +17,8 @@ jobs:
           aws --version
 
           # Configure AWS CLI for CloudFlare R2 (use token for both fields)
-          aws configure set aws_access_key_id ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          aws configure set aws_secret_access_key ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          aws configure set aws_access_key_id ${{ secrets.R2_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.R2_SECRET_ACCESS_KEY }}
           aws configure set default.region auto
           aws configure set default.output json
 
