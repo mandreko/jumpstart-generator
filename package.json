@@ -1,6 +1,6 @@
 {
   "name": "jumpstart-generator",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "MTG Jumpstart Card Conjurer JSON Generator",
   "scripts": {
     "clean": "rimraf \"output\"",
