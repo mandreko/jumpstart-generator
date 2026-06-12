@@ -1,0 +1,54 @@
+name: Test R2 Upload
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-r2:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Configure AWS CLI for CloudFlare R2
+        run: |
+          # Install AWS CLI v2
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install
+
+          # Configure AWS CLI for CloudFlare R2
+          aws configure set aws_access_key_id ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          aws configure set aws_secret_access_key ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          aws configure set default.region auto
+          aws configure set default.output json
+
+      - name: Create test files and upload to R2
+        run: |
+          # Create a test directory structure
+          mkdir -p test/MSH/front-images test/MSH/back-images test/MSH/cardconjurer-import-files
+
+          # Create dummy test files
+          echo "Test front image" > test/MSH/front-images/MSH-front-0001-Test.jpg
+          echo "Test back image" > test/MSH/back-images/MSH-back-0001-Test.jpg
+          echo "Test import file" > test/MSH/cardconjurer-import-files/MSH-saved-cards.cardconjurer
+
+          # Create test zip
+          cd test/MSH
+          zip -r "MSH-test-cards.zip" .
+
+          # Test upload to R2
+          echo "Testing upload to CloudFlare R2..."
+          aws s3 cp "MSH-test-cards.zip" "s3://${{ secrets.R2_BUCKET_NAME }}/test/MSH-test-cards.zip" \
+            --endpoint-url "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+
+          echo "Upload complete! Check: https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/test/MSH-test-cards.zip"
+
+      - name: Test download link
+        run: |
+          # Wait a moment for R2 to propagate
+          sleep 5
+
+          # Test if file is accessible
+          curl -I "https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/test/MSH-test-cards.zip" || echo "Download test failed"
