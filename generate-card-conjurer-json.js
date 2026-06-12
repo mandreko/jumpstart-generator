@@ -28,9 +28,10 @@ const COLOR_TO_WATERMARK_MAP = {
   'multicolor': '#cab34d'
 };
 
-const SCRYFALL_DELAY_MS = 150; // Increased to avoid rate limiting
-const SCRYFALL_MAX_RETRIES = 3;
-const SCRYFALL_RETRY_DELAY_MS = 1000;
+const SCRYFALL_DELAY_MS = 1000; // Much more conservative delay
+const SCRYFALL_MAX_RETRIES = 5; // More retries
+const SCRYFALL_RETRY_DELAY_MS = 5000; // Much longer retry delay
+const SCRYFALL_CIRCUIT_BREAKER_THRESHOLD = 5; // Circuit breaker after 5 consecutive rate limits
 
 // Card Conjurer template (embedded)
 const CARD_TEMPLATE = {
@@ -283,20 +284,46 @@ async function addBlackBorder(filepath) {
   }
 }
 
-// Rate Limiter Class
+// Rate Limiter Class with Circuit Breaker
 class RateLimiter {
-  constructor(delayMs = 100) {
+  constructor(delayMs = 1000) {
     this.delayMs = delayMs;
     this.lastRequestTime = 0;
+    this.consecutiveRateLimits = 0;
+    this.circuitBreakerDelay = 0;
+    this.maxConsecutiveRateLimits = SCRYFALL_CIRCUIT_BREAKER_THRESHOLD;
   }
 
   async wait() {
     const now = Date.now();
     const timeSinceLastRequest = now - this.lastRequestTime;
-    if (timeSinceLastRequest < this.delayMs) {
-      await sleep(this.delayMs - timeSinceLastRequest);
+
+    // Circuit breaker: if we've hit rate limits recently, add extra delay
+    let extraDelay = 0;
+    if (this.consecutiveRateLimits >= this.maxConsecutiveRateLimits) {
+      extraDelay = Math.min(30000, 2000 * Math.pow(2, this.consecutiveRateLimits - this.maxConsecutiveRateLimits)); // Exponential backoff up to 30s
+      console.log(`[WARN] Circuit breaker active: ${this.consecutiveRateLimits} consecutive rate limits, adding ${extraDelay}ms delay`);
+    }
+
+    // Add random jitter (0-50% of base delay) to prevent thundering herd
+    const jitter = Math.random() * this.delayMs * 0.5;
+    const totalDelay = this.delayMs + jitter + extraDelay;
+
+    if (timeSinceLastRequest < totalDelay) {
+      await sleep(totalDelay - timeSinceLastRequest);
     }
     this.lastRequestTime = Date.now();
+  }
+
+  recordRateLimit() {
+    this.consecutiveRateLimits++;
+  }
+
+  recordSuccess() {
+    if (this.consecutiveRateLimits > 0) {
+      console.log(`[INFO] Request succeeded, resetting circuit breaker (was at ${this.consecutiveRateLimits} consecutive rate limits)`);
+    }
+    this.consecutiveRateLimits = 0;
   }
 }
 
@@ -324,8 +351,8 @@ class ScryfallCache {
   }
 }
 
-// Scryfall API: Query card data with retry logic
-async function queryCardData(cardName, setCode, cache, rateLimiter) {
+// Scryfall API: Query card data with retry logic and fallback sets
+async function queryCardData(cardName, setCodes, cache, rateLimiter) {
   // Check cache first
   const cachedData = cache.getCachedCard(cardName);
   if (cachedData) {
@@ -333,45 +360,82 @@ async function queryCardData(cardName, setCode, cache, rateLimiter) {
   }
 
   const encodedName = encodeURIComponent(cardName);
-  const url = `https://api.scryfall.com/cards/named?exact=${encodedName}`;
 
-  const options = {
-    headers: {
-      'User-Agent': 'JumpstartCardGenerator/1.0',
-      'Accept': 'application/json'
+  // Try each set in order (primary first, then fallbacks)
+  const setsToTry = Array.isArray(setCodes) ? setCodes : [setCodes];
+
+  // Check if this is a basic land or common card that might exist generically
+  const isBasicLand = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'].includes(cardName);
+  const isCommonCard = cardName.startsWith('Thriving ') || ['Sol Ring', 'Command Tower'].includes(cardName);
+
+  for (const setCode of setsToTry) {
+    // Try set-specific search first if setCode is provided
+    const urls = [];
+    if (setCode) {
+      urls.push(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(`!"${cardName}" set:${setCode}`)}`);
     }
-  };
+    // For basic lands and common cards, also try a generic search early
+    if (isBasicLand || isCommonCard) {
+      urls.push(`https://api.scryfall.com/cards/named?exact=${encodedName}`);
+    }
+    // Add generic search at the end for other cards
+    if (!isBasicLand && !isCommonCard) {
+      urls.push(`https://api.scryfall.com/cards/named?exact=${encodedName}`);
+    }
 
-  for (let attempt = 1; attempt <= SCRYFALL_MAX_RETRIES; attempt++) {
-    await rateLimiter.wait();
-
-    try {
-      const response = await httpsGet(url, options);
-      const data = JSON.parse(response);
-
-      const cardData = {
-        name: data.name,
-        mana_cost: data.mana_cost || '',
-        type_line: data.type_line || 'Unknown'
-      };
-
-      cache.setCachedCard(cardName, cardData);
-      return cardData;
-    } catch (error) {
-      const isRateLimit = error.message && error.message.includes('429');
-      const isLastAttempt = attempt === SCRYFALL_MAX_RETRIES;
-
-      if (isRateLimit && !isLastAttempt) {
-        console.log(`[WARN] Rate limited, retrying ${cardName} (attempt ${attempt}/${SCRYFALL_MAX_RETRIES})...`);
-        await sleep(SCRYFALL_RETRY_DELAY_MS * attempt); // Exponential backoff
-        continue;
+    const options = {
+      headers: {
+        'User-Agent': 'JumpstartCardGenerator/1.0',
+        'Accept': 'application/json'
       }
+    };
 
-      if (isLastAttempt) {
-        console.log(`[WARN] Card not found: ${cardName} (using defaults)`);
+    for (const url of urls) {
+      for (let attempt = 1; attempt <= SCRYFALL_MAX_RETRIES; attempt++) {
+        await rateLimiter.wait();
+
+        try {
+          const response = await httpsGet(url, options);
+          const data = JSON.parse(response);
+
+          // Handle both search results and single card responses
+          const card = data.data && data.data.length > 0 ? data.data[0] : data;
+
+          if (card && card.name) {
+            const cardData = {
+              name: card.name,
+              mana_cost: card.mana_cost || '',
+              type_line: card.type_line || 'Unknown'
+            };
+
+            rateLimiter.recordSuccess();
+            cache.setCachedCard(cardName, cardData);
+            return cardData;
+          }
+        } catch (error) {
+          const isRateLimit = error.message && error.message.includes('429');
+          const isLastAttempt = attempt === SCRYFALL_MAX_RETRIES;
+
+          if (isRateLimit) {
+            rateLimiter.recordRateLimit();
+            if (!isLastAttempt) {
+              const retryDelay = SCRYFALL_RETRY_DELAY_MS * Math.pow(2, attempt - 1); // Exponential backoff
+              console.log(`[WARN] Rate limited, retrying ${cardName} in set ${setCode} (attempt ${attempt}/${SCRYFALL_MAX_RETRIES}) after ${retryDelay}ms...`);
+              await sleep(retryDelay);
+              continue;
+            }
+          }
+
+          // If this was the last attempt for this URL/set combination, continue to next URL/set
+          if (isLastAttempt) {
+            break;
+          }
+        }
       }
     }
   }
+
+  console.log(`[WARN] Card not found: ${cardName} (using defaults)`);
 
   const defaultData = {
     name: cardName,
@@ -383,9 +447,11 @@ async function queryCardData(cardName, setCode, cache, rateLimiter) {
   return defaultData;
 }
 
-// Scryfall API: Query pack card for theme color with retry logic
-async function queryPackCard(packName, faceSet, cache, rateLimiter) {
-  const cacheKey = `${faceSet}:${packName}`;
+// Scryfall API: Query pack card for theme color with retry logic and fallback sets
+async function queryPackCard(packName, faceSets, cache, rateLimiter) {
+  const setsToTry = Array.isArray(faceSets) ? faceSets : [faceSets];
+  const primarySet = setsToTry[0];
+  const cacheKey = `${primarySet}:${packName}`;
 
   // Check cache first
   const cachedColor = cache.getCachedPackCard(cacheKey);
@@ -395,8 +461,6 @@ async function queryPackCard(packName, faceSet, cache, rateLimiter) {
 
   // Remove variation indicators for the search
   const cleanPackName = packName.replace(/-\d+$/, '').replace(/\(\d+\)$/, '').trim();
-  const searchQuery = encodeURIComponent(`set:${faceSet} ${cleanPackName}`);
-  const url = `https://api.scryfall.com/cards/search?q=${searchQuery}`;
 
   const options = {
     headers: {
@@ -405,58 +469,74 @@ async function queryPackCard(packName, faceSet, cache, rateLimiter) {
     }
   };
 
-  for (let attempt = 1; attempt <= SCRYFALL_MAX_RETRIES; attempt++) {
-    await rateLimiter.wait();
+  // Try each set in order (primary first, then fallbacks)
+  for (const faceSet of setsToTry) {
+    const searchQuery = encodeURIComponent(`set:${faceSet} ${cleanPackName}`);
+    const url = `https://api.scryfall.com/cards/search?q=${searchQuery}`;
 
-    try {
-      const response = await httpsGet(url, options);
-      const data = JSON.parse(response);
+    for (let attempt = 1; attempt <= SCRYFALL_MAX_RETRIES; attempt++) {
+      await rateLimiter.wait();
 
-      if (data.data && data.data.length > 0) {
-        const card = data.data[0];
-        const oracleText = card.oracle_text || '';
-        const collectorNumber = card.collector_number || '';
-        const imageUri = card.image_uris?.large || null;
+      try {
+        const response = await httpsGet(url, options);
+        const data = JSON.parse(response);
 
-        // Extract color from oracle_text
-        const colors = [];
-        if (/{W}/.test(oracleText)) colors.push('W');
-        if (/{U}/.test(oracleText)) colors.push('U');
-        if (/{B}/.test(oracleText)) colors.push('B');
-        if (/{R}/.test(oracleText)) colors.push('R');
-        if (/{G}/.test(oracleText)) colors.push('G');
+        if (data.data && data.data.length > 0) {
+          const card = data.data[0];
+          const oracleText = card.oracle_text || '';
+          const collectorNumber = card.collector_number || '';
+          const imageUri = card.image_uris?.large || null;
 
-        let themeColor;
-        if (colors.length === 0) {
-          themeColor = '{C}';
-        } else if (colors.length === 1) {
-          themeColor = `{${colors[0]}}`;
-        } else {
-          // For multicolor, store all colors in WUBRG order
-          themeColor = colors.map(c => `{${c}}`).join('');
+          // Extract color from oracle_text
+          const colors = [];
+          if (/{W}/.test(oracleText)) colors.push('W');
+          if (/{U}/.test(oracleText)) colors.push('U');
+          if (/{B}/.test(oracleText)) colors.push('B');
+          if (/{R}/.test(oracleText)) colors.push('R');
+          if (/{G}/.test(oracleText)) colors.push('G');
+
+          let themeColor;
+          if (colors.length === 0) {
+            themeColor = '{C}';
+          } else if (colors.length === 1) {
+            themeColor = `{${colors[0]}}`;
+          } else {
+            // For multicolor, store all colors in WUBRG order
+            themeColor = colors.map(c => `{${c}}`).join('');
+          }
+
+          const result = { themeColor, collectorNumber, imageUri };
+          rateLimiter.recordSuccess();
+          cache.setCachedPackCard(cacheKey, result);
+          console.log(`[INFO] Found pack card ${packName} in set ${faceSet}`);
+          return result;
+        }
+        // No data found in this set, try next set
+        break;
+      } catch (error) {
+        const isRateLimit = error.message && error.message.includes('429');
+        const isLastAttempt = attempt === SCRYFALL_MAX_RETRIES;
+
+        if (isRateLimit) {
+          rateLimiter.recordRateLimit();
+          if (!isLastAttempt) {
+            const retryDelay = SCRYFALL_RETRY_DELAY_MS * Math.pow(2, attempt - 1); // Exponential backoff
+            console.log(`[WARN] Rate limited, retrying pack card ${packName} in set ${faceSet} (attempt ${attempt}/${SCRYFALL_MAX_RETRIES}) after ${retryDelay}ms...`);
+            await sleep(retryDelay);
+            continue;
+          }
         }
 
-        const result = { themeColor, collectorNumber, imageUri };
-        cache.setCachedPackCard(cacheKey, result);
-        return result;
-      }
-      // No data found - this is a genuine "not found", not an error
-      break;
-    } catch (error) {
-      const isRateLimit = error.message && error.message.includes('429');
-      const isLastAttempt = attempt === SCRYFALL_MAX_RETRIES;
-
-      if (isRateLimit && !isLastAttempt) {
-        console.log(`[WARN] Rate limited, retrying pack card ${packName} (attempt ${attempt}/${SCRYFALL_MAX_RETRIES})...`);
-        await sleep(SCRYFALL_RETRY_DELAY_MS * attempt); // Exponential backoff
-        continue;
-      }
-
-      if (isLastAttempt) {
-        console.log(`[WARN] Pack card not found for: ${packName} in set ${faceSet}`);
+        // If this was the last attempt for this set, break to try next set
+        if (isLastAttempt) {
+          console.log(`[WARN] Failed to query pack card ${packName} in set ${faceSet} after ${SCRYFALL_MAX_RETRIES} attempts`);
+          break;
+        }
       }
     }
   }
+
+  console.log(`[WARN] Pack card not found for: ${packName} in any of the sets: ${setsToTry.join(', ')}`);
 
   // Default to colorless if not found
   const result = { themeColor: '{C}', collectorNumber: '', imageUri: null };
@@ -962,12 +1042,19 @@ async function main() {
 
       // Query Scryfall for each card
       const cardsWithData = [];
-      for (const parsedCard of parsedCards) {
-        const cardData = await queryCardData(parsedCard.name, setConfig.set, cache, rateLimiter);
+      console.log(`[INFO] Querying ${parsedCards.length} cards for pack ${packName}...`);
+      for (let j = 0; j < parsedCards.length; j++) {
+        const parsedCard = parsedCards[j];
+        console.log(`[INFO] Querying card ${j + 1}/${parsedCards.length}: ${parsedCard.name}`);
+        const cardSets = setConfig['fallback-sets'] || [setConfig.set];
+        const cardData = await queryCardData(parsedCard.name, cardSets, cache, rateLimiter);
         cardsProcessed++;
 
         if (cardData.type_line === 'Unknown') {
           cardsNotFound++;
+          console.log(`[INFO] Card ${j + 1}/${parsedCards.length}: ${parsedCard.name} - NOT FOUND (using defaults)`);
+        } else {
+          console.log(`[INFO] Card ${j + 1}/${parsedCards.length}: ${parsedCard.name} - Found: ${cardData.type_line}`);
         }
 
         cardsWithData.push({

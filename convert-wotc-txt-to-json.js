@@ -83,7 +83,7 @@ async function processFolder(folderName) {
     const filePath = path.join(folderPath, file);
     const content = await fs.readFile(filePath, "utf-8");
 
-    const name = file.replace(".txt", "");
+    const name = file.replace(".txt", "").replace(/\s+/g, " ").trim();
     const cards = parseCardList(content, folderName);
 
     results.push({

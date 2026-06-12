@@ -196,6 +196,27 @@ async function processCard(page, card, setCode, outputDir, collectorMapping, wor
  * Worker function - processes cards from a shared queue
  */
 async function cardWorker(page, cardQueue, setCode, outputDir, collectorMapping, workerId, results) {
+  // WARM-UP HACK: Render a dummy card first to prime font loading
+  try {
+    console.log(`[W${workerId}] Warming up font rendering...`);
+
+    // Select the last card in dropdown as dummy (less likely to be processed first)
+    const dropdown = page.locator('#load-card-options');
+    const optionCount = await dropdown.locator('option').count();
+
+    if (optionCount > 1) {
+      // Select last card and let it render to prime fonts
+      await dropdown.selectOption({ index: optionCount - 1 });
+      await page.waitForTimeout(RENDER_WAIT_MS);
+
+      console.log(`[W${workerId}] Font warm-up complete`);
+    }
+  } catch (warmupError) {
+    console.log(`[W${workerId}] Font warm-up failed: ${warmupError.message}`);
+    // Continue anyway
+  }
+
+  // Process actual cards
   while (true) {
     const card = cardQueue.shift();
     if (!card) break;
@@ -252,6 +273,16 @@ async function renderSet(setCode) {
     const cardCount = await uploadFile(primaryPage, importFilePath);
     console.log(`[INFO] Loaded ${cardCount} cards`);
 
+    // Reload page to fix font rendering issues (as suggested by user testing)
+    console.log(`[INFO] Reloading page to ensure proper font rendering...`);
+    await primaryPage.reload({ waitUntil: 'networkidle' });
+
+    // Navigate back to Import/Save tab after reload
+    await navigateToImportTab(primaryPage);
+
+    // Wait a bit for everything to stabilize after reload
+    await primaryPage.waitForTimeout(1000);
+
     // Get card list
     const cards = await getCardList(primaryPage);
     if (cards.length === 0) {
@@ -282,6 +313,13 @@ async function renderSet(setCode) {
       const page = await context.newPage();
       await page.goto(CARDCONJURER_URL, { waitUntil: 'networkidle' });
       await waitForSavedCards(page);
+
+      // Also reload secondary pages to ensure proper font rendering
+      console.log(`[INFO] Reloading secondary page ${i + 1} for font rendering...`);
+      await page.reload({ waitUntil: 'networkidle' });
+      await navigateToImportTab(page);
+      await page.waitForTimeout(500);
+
       pages.push(page);
     }
 
