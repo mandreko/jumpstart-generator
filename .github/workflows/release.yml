@@ -70,20 +70,41 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Configure AWS CLI for CloudFlare R2
+        run: |
+          # Install AWS CLI v2
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install
+
+          # Configure AWS CLI for CloudFlare R2
+          aws configure set aws_access_key_id ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          aws configure set aws_secret_access_key ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          aws configure set default.region auto
+          aws configure set default.output json
+
       - name: Build all sets
         run: npm run rebuild
         env:
           RENDER_PARALLEL: 2
           RENDER_PAGES: 2
 
-      - name: Create zip files for each set
+      - name: Get version from tag
+        id: get_version
         run: |
-          mkdir -p releases
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "version=manual-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+          fi
 
+      - name: Create and upload zip files to CloudFlare R2
+        run: |
           # Extract set codes from sets.json
           sets=$(jq -r '.[].set' sets.json)
+          version="${{ steps.get_version.outputs.version }}"
 
-          # Create zip for each set
+          # Create zip for each set and upload to R2
           for set in $sets; do
             echo "Creating zip for $set..."
             mkdir -p "temp/$set"
@@ -108,22 +129,30 @@ jobs:
 
             # Create the zip file
             cd temp/$set
-            zip -r "../../releases/${set}-cards.zip" .
+            zip_name="${set}-cards.zip"
+            zip -r "$zip_name" .
+
+            # Upload to CloudFlare R2
+            echo "Uploading $zip_name to CloudFlare R2..."
+            aws s3 cp "$zip_name" "s3://${{ secrets.R2_BUCKET_NAME }}/$version/$zip_name" \
+              --endpoint-url "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+
             cd ../..
 
             # Cleanup temp directory
             rm -rf "temp/$set"
           done
 
+          # Create and upload all-sets zip
+          echo "Creating all-sets zip..."
+          cd output
+          zip -r "all-sets-cards.zip" front-images/ back-images/ cardconjurer-import-files/
 
-      - name: Get version from tag
-        id: get_version
-        run: |
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          else
-            echo "version=manual-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
-          fi
+          echo "Uploading all-sets-cards.zip to CloudFlare R2..."
+          aws s3 cp "all-sets-cards.zip" "s3://${{ secrets.R2_BUCKET_NAME }}/$version/all-sets-cards.zip" \
+            --endpoint-url "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+
+          cd ..
 
       - name: Create Release
         id: create_release
@@ -147,13 +176,27 @@ jobs:
             - **ONE** - Phyrexia: All Will Be One Jumpstart
             - **BRO** - The Brothers' War Jumpstart
 
+            ## Download Links
+
+            **Individual Sets:**
+            - [MSH-cards.zip](https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/${{ steps.get_version.outputs.version }}/MSH-cards.zip) - Marvel Super Heroes
+            - [TLA-cards.zip](https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/${{ steps.get_version.outputs.version }}/TLA-cards.zip) - Avatar
+            - [DMU-cards.zip](https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/${{ steps.get_version.outputs.version }}/DMU-cards.zip) - Dominaria United
+            - [J25-cards.zip](https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/${{ steps.get_version.outputs.version }}/J25-cards.zip) - Foundations
+            - [J22-cards.zip](https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/${{ steps.get_version.outputs.version }}/J22-cards.zip) - Jumpstart 2022
+            - [LTR-cards.zip](https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/${{ steps.get_version.outputs.version }}/LTR-cards.zip) - Lord of the Rings
+            - [MOM-cards.zip](https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/${{ steps.get_version.outputs.version }}/MOM-cards.zip) - March of the Machine
+            - [ONE-cards.zip](https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/${{ steps.get_version.outputs.version }}/ONE-cards.zip) - Phyrexia: All Will Be One
+            - [BRO-cards.zip](https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/${{ steps.get_version.outputs.version }}/BRO-cards.zip) - The Brothers' War
+
+            **All Sets Combined:**
+            - [all-sets-cards.zip](https://pub-b1158a5e66b14ff3b0ba07735c5b3127.r2.dev/${{ steps.get_version.outputs.version }}/all-sets-cards.zip) - Complete collection (~250MB)
+
             ## Files
-            Each set-specific zip contains:
+            Each zip contains:
             - `front-images/` - Processed card front images (738×1002px, ready for MPC)
             - `back-images/` - Rendered card back images from CardConjurer (ready for MPC)
             - `cardconjurer-import-files/` - Bulk import file for CardConjurer.app
-
-            Download individual sets as needed, or download all sets if you want the complete collection.
 
             ## Usage
             1. Download the zip for your desired set(s)
@@ -163,7 +206,5 @@ jobs:
             See the [USAGE.md](https://github.com/${{ github.repository }}/blob/main/USAGE.md) for detailed instructions.
           draft: false
           prerelease: false
-          files: |
-            releases/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
