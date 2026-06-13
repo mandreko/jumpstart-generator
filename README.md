@@ -1,137 +1,106 @@
-# MTG Jumpstart Card Conjurer JSON Generator
+# MTG Jumpstart Card Generator
 
-Generates Card Conjurer JSON files for MTG Jumpstart packs by querying Scryfall API for card data. Also downloads and processes face card images with black borders for MPC printing.
+Create your own physical MTG Jumpstart packs for printing! This project generates ready-to-print card files from official Wizards of the Coast Jumpstart pack lists.
 
-## Quick Start - Download Pre-Generated Files
+## What is This?
 
-**Don't want to run the code locally?** You can download the latest pre-generated Card Conjurer JSON files and face card images directly from the [GitHub Releases page](https://github.com/mandreko/jumpstart-generator/releases/latest).
+Magic: The Gathering Jumpstart is a fun, quick-play format where you shuffle two themed packs together and start playing immediately. This project takes official WOTC Jumpstart pack lists and creates printable cards that you can order from printing services like makeplayingcards.com.
+
+## What You Get
+
+![Example Cards](docs/example.jpg)
+
+For each Jumpstart pack, this project creates:
+
+- **Face Cards**: Custom cards showing the pack theme with a complete list of all cards included
+- **Back Cards**: Beautiful MTG-themed artwork for the reverse side
+- **Print-Ready Files**: Properly sized and formatted for professional printing services
+
+The generated cards include all 8 official Jumpstart sets:
+- **Jumpstart 2022** (J22) - 121 packs
+- **Jumpstart: Historic Horizons** (J21) - 46 packs  
+- **The Lord of the Rings** (LTR) - 40 packs
+- **March of the Machine** (MOM) - 40 packs
+- **Phyrexia: All Will Be One** (ONE) - 40 packs
+- **The Brothers' War** (BRO) - 40 packs
+- **Dominaria United** (DMU) - 40 packs
+- **The Lost Caverns of Ixalan** (TLA) - 40 packs
+
+## Quick Start - Download Pre-Made Files
+
+**Just want to print cards?** Download the latest files from the [GitHub Releases page](https://github.com/mandreko/jumpstart-generator/releases/latest).
 
 Each release includes:
-- **Card Conjurer import files** (`.cardconjurer`) - Ready to import into CardConjurer.app
-- **Face card images** - Pre-processed images with black borders for MPC printing
+- **Front Images**: Face cards with pack contents (`*-front-*.jpg`)
+- **Back Images**: Themed artwork for card backs (`*-back-*.jpg`)
+- **Card Conjurer Files**: Import these into [CardConjurer.app](https://cardconjurer.app/) for customization (`.cardconjurer`)
 
-This is the easiest option if you just want to print cards without setting up the development environment.
+Total download size: ~250MB (high-quality print files)
 
-## Prerequisites
+## How to Print Your Cards
 
-### Required Software
+1. **Download** the latest release files
+2. **Upload** the front and back images to your preferred printing service:
+   - [makeplayingcards.com](https://makeplayingcards.com) (recommended)
+   - [notmpc.com](https://notmpc.com)
+   - Any service that accepts custom playing cards
+3. **Order** standard poker-sized cards (2.5" × 3.5")
+4. **Play!** Each pack contains 20 cards - shuffle two packs together for a complete Jumpstart game
 
-- **Node.js** (v14 or higher)
-  - Download: https://nodejs.org/
-  - Verify installation: `node --version`
+### Print Settings
+- **Card Size**: Poker/Standard (2.5" × 3.5")
+- **Quality**: 300+ DPI recommended
+- **Finish**: Smooth or linen finish work well
+- **Quantity**: Order as many sets as you want!
 
-- **ImageMagick** - Image processing library
-  - macOS: `brew install imagemagick`
-  - Ubuntu/Debian: `sudo apt-get install imagemagick`
-  - Windows: Download from https://imagemagick.org/script/download.php
-  - Verify installation: `magick --version`
+## Customize Your Cards
 
-### System Requirements
+Want to modify the cards or create your own themes?
 
-- Internet connection (for Scryfall API access)
-- ~500MB free disk space for generated files
-- Scryfall API rate limit: 100ms delay between requests (handled automatically)
+1. Download the `.cardconjurer` files from the releases
+2. Import them into [CardConjurer.app](https://cardconjurer.app/)
+3. Customize artwork, colors, or card lists
+4. Export your modified cards
 
-### Platform Notes
+## Generate Files Yourself
 
-All npm scripts are cross-platform compatible and work on Windows, macOS, and Linux without requiring any special shell environment.
+Want to run the generator locally? See [TECHNICAL.md](TECHNICAL.md) for detailed setup and usage instructions.
 
-## Usage
+### Quick Local Setup
 
-### Installation
-
-First, install dependencies (required for cross-platform compatibility):
+If you have Node.js installed:
 
 ```bash
+git clone https://github.com/mandreko/jumpstart-generator.git
+cd jumpstart-generator
 npm install
-```
-
-### Quick Start
-
-Build everything from scratch:
-
-```bash
 npm run rebuild
 ```
 
-### Individual Commands
+This generates all files locally (~30-40 minutes total processing time).
 
-**Convert WOTC text files to intermediate JSON:**
+## File Organization
 
-```bash
-npm run convert
-```
+Generated files follow this naming pattern:
+- `{SET}-front-{NUMBER}-{PACK-NAME}.jpg` - Face cards with pack contents
+- `{SET}-back-{NUMBER}-{PACK-NAME}.jpg` - Themed artwork backs  
+- `{SET}-saved-cards.cardconjurer` - Bulk import files for Card Conjurer
 
-**Generate Card Conjurer JSON files from intermediate JSON:**
+Example: `J22-front-0001-Blink-1.jpg` and `J22-back-0001-Blink-1.jpg`
 
-```bash
-npm run generate
-```
+## Credits
 
-**Full build (convert + generate):**
+- **Concept**: Inspired by [u/HyperHowie](https://www.reddit.com/user/HyperHowie/) on Reddit
+- **Card Data**: [Scryfall](https://scryfall.com/) API
+- **Artwork**: [MTG Vectors](https://github.com/pappnu/mtg-vectors) project
+- **Card Creation**: [CardConjurer.app](https://cardconjurer.app/)
+- **Official Pack Lists**: Wizards of the Coast
+- **Development**: 100% coded by Claude AI
 
-```bash
-npm run build
-```
+## Support
 
-**Clean generated files:**
+Having issues? Check [TECHNICAL.md](TECHNICAL.md) for troubleshooting or open an issue on GitHub.
 
-```bash
-npm run clean
-```
+---
 
-## Manual Usage
-
-### Convert a specific set:
-
-```bash
-node convert-wotc-txt-to-json.js "Avatar"
-```
-
-### Generate Card Conjurer JSONs for a specific set:
-
-```bash
-node generate-card-conjurer-json.js TLA
-```
-
-Available set codes: `TLA`, `DMU`, `J25`, `J22`, `LTR`, `MOM`, `ONE`, `BRO`
-
-## Output
-
-Generated files are located in:
-
-- `output/json-decklists/` - Intermediate JSON decklist files (e.g., `avatar-output.json`)
-- `output/cardconjurer-json-files/` - Individual Card Conjurer JSON files for each pack
-- `output/cardconjurer-import-files/` - Combined `.cardconjurer` files for bulk import into Card Conjurer
-- `output/front-images/` - Face card images with black borders for MPC printing
-
-### Image Processing
-
-Face card images are automatically:
-
-1. Downloaded from Scryfall (672×936 pixels)
-2. Overlaid with 28px pure black on original borders
-3. Extended with 33px black bleed borders (final: 738×1002 pixels)
-4. Ready for makeplayingcards.com printing
-
-## Project Structure
-
-- `txt-from-wotc/` - WOTC text files organized by set
-- `output/` - All generated output files (organized into subdirectories)
-- `sets.json` - Set configuration (watermark URLs, set codes, etc.)
-- `convert-wotc-txt-to-json.js` - Converts WOTC text files to intermediate JSON
-- `generate-card-conjurer-json.js` - Generates Card Conjurer JSON files from intermediate JSON
-- `run-convert-all.js` - Helper script to convert all sets (cross-platform)
-- `run-generate-all.js` - Helper script to generate all sets (cross-platform)
-
-## Thanks
-
-This project was 100% coded by Claude AI as a test of vibe-coding capabilities
-
-Additionally, these folks and projects made this project possible:
-
-- [Scryfall](https://scryfall.com/) - for use of their amazing API
-- https://github.com/pappnu/mtg-vectors - for use of the SVG vector files
-- https://www.reddit.com/user/HyperHowie/ - for the idea and instructions on how to create cards like theirs
-- [CardConjurer.app](https://cardconjurer.app/) - for use of their site and making it possible to import/export files
-- Wizards of the Coasts - for putting their Jumpstart Pack Lists available on their site to download
+*This project is not affiliated with Wizards of the Coast. Magic: The Gathering is a trademark of Wizards of the Coast LLC.*
