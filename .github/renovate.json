@@ -2,6 +2,14 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "enabledManagers": ["npm", "github-actions"],
   "dependencyDashboard": true,
+  "semanticCommits": "enabled",
+  "pinDigests": true,
+  "minimumReleaseAge": "7 days",
+  "prConcurrentLimit": 5,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 9am on the first day of the month"]
+  },
   "packageRules": [
     {
       "groupName": "npm minor",
